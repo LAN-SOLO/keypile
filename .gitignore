@@ -1,0 +1,11 @@
+# Rust core + Tauri desktop apps (planned stack, see KEYPILE_PLAN.md)
+/target/
+/src-tauri/target/
+
+# JS/WASM tooling
+node_modules/
+dist/
+*.wasm
+
+.DS_Store
+*.local
