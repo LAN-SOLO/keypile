@@ -15,12 +15,21 @@ Produktseite: https://lan-solo.com/de/tools/keypile/
 | | Free | unlocked (coming soon) |
 |---|---|---|
 | Preis | 0 € (dauerhaft) | noch offen, zur Beta |
-| Tresor | lokal, unbegrenzte Einträge | alles aus Free |
+| Tresor | lokal, unbegrenzte Einträge, alle Kategorien/Vorlagen | alles aus Free |
 | Sync | über eigenen Cloud-Speicher (Dropbox, Google Drive, iCloud Drive, WebDAV) | zusätzlich: E2E-Geräte-Sync ohne Cloud-Laufwerk |
 | Autofill | — (manuelles Kopieren / Auto-Type) | Browser-Plugin (Chrome, Firefox, browse) |
 | Teilen | — | einzelne Einträge, widerrufbar |
 | Krypto | AES-256 + Argon2id, optional Schlüsseldatei/Hardware-Key | gleich |
-| TOTP, Passkeys, Passwort-Check, Import/Export | ✓ | ✓ |
+| Passwort-Check, Import/Export, In-App-Updates | ✓ | ✓ |
+| Einmalcodes (TOTP/2FA) | — | ✓ |
+| Verschlüsselte Anhänge | — | ✓ |
+| Volles Audit (HIBP-Leak-Abgleich, Passwort-Alter) | Basis (schwach/identisch) | ✓ |
+| Passkeys | — | ✓ (geplant) |
+
+> Stand 08/2026: Der unlocked-Split folgt dem Bitwarden-Modell (TOTP &
+> Security-Reports als Premium). Während der Alpha sind alle unlocked-Features
+> zum Testen freigeschaltet (Badge „unlocked" in der App); erzwungen wird das
+> Gating erst mit dem Lizenzsystem zur Beta.
 
 ### Harte Randbedingungen (ehrlich einplanen!)
 

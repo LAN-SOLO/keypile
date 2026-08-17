@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "keypile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.lan-solo.keypile",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -25,9 +25,26 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGODczMDM3OUU2Q0NFRkYKUldUL3pteWVOekNIanlmenBPZHBKWjc0YkVqa2g3M0hURERmYVJSeHgvSWRwZmRvb0xqeUIxZTUK",
+      "endpoints": [
+        "https://github.com/LAN-SOLO/keypile/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "msi", "nsis", "deb", "rpm", "appimage"],
+    "createUpdaterArtifacts": true,
+    "targets": [
+      "app",
+      "dmg",
+      "msi",
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,14 +56,20 @@
     "shortDescription": "Passwortmanager: lokaler Tresor, Sync über deinen Cloud-Speicher",
     "longDescription": "keypile ist ein Zero-Knowledge-Passwortmanager: ein verschlüsselter, dateibasierter Tresor (Argon2id + AES-256-GCM), der komplett offline funktioniert und sich über deinen eigenen Cloud-Speicher synchronisieren lässt.",
     "linux": {
-      "deb": { "depends": [] },
-      "rpm": { "depends": [] }
+      "deb": {
+        "depends": []
+      },
+      "rpm": {
+        "depends": []
+      }
     },
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
     "windows": {
-      "nsis": { "installMode": "currentUser" }
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }

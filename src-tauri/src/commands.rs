@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 
 use keypile_core::crypto::KdfParams;
 use keypile_core::generator::{PassphraseOptions, PasswordOptions};
-use keypile_core::model::{CustomField, Entry, EntryHistory, Folder, Vault};
+use keypile_core::model::{Attachment, CustomField, Entry, EntryHistory, Folder, Vault, CATEGORIES};
 use keypile_core::{format, generator, import, strength, totp};
 
 use crate::pwned;
@@ -35,10 +35,13 @@ pub struct EntrySummary {
     pub title: String,
     pub username: String,
     pub url: Option<String>,
+    pub category: String,
     pub favorite: bool,
     pub folder: Option<Uuid>,
     pub tags: Vec<String>,
     pub has_totp: bool,
+    pub attachment_count: usize,
+    pub archived: bool,
     pub deleted: bool,
     pub modified: String,
 }
@@ -47,6 +50,8 @@ pub struct EntrySummary {
 pub struct EntryInput {
     pub id: Option<Uuid>,
     pub folder: Option<Uuid>,
+    #[serde(default)]
+    pub category: Option<String>,
     pub title: String,
     #[serde(default)]
     pub username: String,
@@ -208,10 +213,13 @@ pub fn list_entries(st: State<'_, AppState>) -> Result<Vec<EntrySummary>, String
                 title: e.title.clone(),
                 username: e.username.clone(),
                 url: e.urls.first().cloned(),
+                category: e.category.clone(),
                 favorite: e.favorite,
                 folder: e.folder,
                 tags: e.tags.clone(),
                 has_totp: e.totp.is_some(),
+                attachment_count: e.attachments.len(),
+                archived: e.archived,
                 deleted: e.deleted,
                 modified: e.modified.to_rfc3339(),
             })
@@ -224,11 +232,18 @@ pub fn list_entries(st: State<'_, AppState>) -> Result<Vec<EntrySummary>, String
 #[tauri::command]
 pub fn get_entry(st: State<'_, AppState>, id: Uuid) -> Result<Entry, String> {
     with_session(&st, |s| {
-        s.unlocked
+        let mut e = s
+            .unlocked
             .vault
             .entry(id)
             .cloned()
-            .ok_or_else(|| "Eintrag nicht gefunden".into())
+            .ok_or_else(|| "Eintrag nicht gefunden".to_string())?;
+        // strip attachment bytes — the UI gets metadata only and pulls file
+        // contents via save_attachment when the user exports one
+        for a in &mut e.attachments {
+            a.data = String::new();
+        }
+        Ok(e)
     })
 }
 
@@ -258,6 +273,9 @@ pub fn save_entry(
                     existing.history.truncate(MAX_HISTORY);
                     existing.password_changed = Some(chrono::Utc::now());
                 }
+                if let Some(cat) = &input.category {
+                    existing.category = normalize_category(cat);
+                }
                 existing.folder = input.folder;
                 existing.title = input.title;
                 existing.username = input.username;
@@ -273,6 +291,9 @@ pub fn save_entry(
             }
             None => {
                 let mut e = Entry::new(&input.title);
+                if let Some(cat) = &input.category {
+                    e.category = normalize_category(cat);
+                }
                 e.folder = input.folder;
                 e.username = input.username;
                 e.password = input.password;
@@ -293,6 +314,14 @@ pub fn save_entry(
         state::persist(s)?;
         Ok(entry)
     })
+}
+
+fn normalize_category(cat: &str) -> String {
+    if CATEGORIES.contains(&cat) {
+        cat.to_string()
+    } else {
+        "misc".to_string()
+    }
 }
 
 fn set_deleted(
@@ -348,6 +377,120 @@ pub fn empty_trash(st: State<'_, AppState>) -> Result<(), String> {
     with_session(&st, |s| {
         s.unlocked.vault.entries.retain(|e| !e.deleted);
         state::persist(s)?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn set_archived(
+    app: tauri::AppHandle,
+    st: State<'_, AppState>,
+    id: Uuid,
+    archived: bool,
+) -> Result<(), String> {
+    let device_id = settings::load(&app).device_id;
+    with_session(&st, |s| {
+        let e = s
+            .unlocked
+            .vault
+            .entry_mut(id)
+            .ok_or("Eintrag nicht gefunden")?;
+        e.archived = archived;
+        e.touch(&device_id);
+        state::persist(s)?;
+        Ok(())
+    })
+}
+
+// ---------- attachments ----------
+
+const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
+
+#[tauri::command]
+pub fn add_attachment(
+    app: tauri::AppHandle,
+    st: State<'_, AppState>,
+    id: Uuid,
+    file_path: String,
+) -> Result<Entry, String> {
+    use base64::Engine;
+    let device_id = settings::load(&app).device_id;
+    let meta = std::fs::metadata(&file_path)
+        .map_err(|e| format!("Datei konnte nicht gelesen werden: {e}"))?;
+    if meta.len() > MAX_ATTACHMENT_BYTES {
+        return Err("Anhänge sind auf 10 MB begrenzt".into());
+    }
+    let bytes =
+        std::fs::read(&file_path).map_err(|e| format!("Datei konnte nicht gelesen werden: {e}"))?;
+    let name = std::path::Path::new(&file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Anhang")
+        .to_string();
+    with_session(&st, |s| {
+        let mut copy = {
+            let e = s
+                .unlocked
+                .vault
+                .entry_mut(id)
+                .ok_or("Eintrag nicht gefunden")?;
+            e.attachments.push(Attachment {
+                id: Uuid::new_v4(),
+                name,
+                data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                size: meta.len(),
+            });
+            e.touch(&device_id);
+            e.clone()
+        };
+        state::persist(s)?;
+        for a in &mut copy.attachments {
+            a.data = String::new();
+        }
+        Ok(copy)
+    })
+}
+
+#[tauri::command]
+pub fn remove_attachment(
+    app: tauri::AppHandle,
+    st: State<'_, AppState>,
+    id: Uuid,
+    attachment_id: Uuid,
+) -> Result<(), String> {
+    let device_id = settings::load(&app).device_id;
+    with_session(&st, |s| {
+        let e = s
+            .unlocked
+            .vault
+            .entry_mut(id)
+            .ok_or("Eintrag nicht gefunden")?;
+        e.attachments.retain(|a| a.id != attachment_id);
+        e.touch(&device_id);
+        state::persist(s)?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn save_attachment(
+    st: State<'_, AppState>,
+    id: Uuid,
+    attachment_id: Uuid,
+    dest_path: String,
+) -> Result<(), String> {
+    use base64::Engine;
+    with_session(&st, |s| {
+        let e = s.unlocked.vault.entry(id).ok_or("Eintrag nicht gefunden")?;
+        let a = e
+            .attachments
+            .iter()
+            .find(|a| a.id == attachment_id)
+            .ok_or("Anhang nicht gefunden")?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&a.data)
+            .map_err(|_| "Anhang ist beschädigt")?;
+        std::fs::write(&dest_path, bytes).map_err(|e| format!("Speichern fehlgeschlagen: {e}"))?;
         Ok(())
     })
 }
@@ -501,11 +644,20 @@ pub fn copy_secret(app: tauri::AppHandle, text: String) -> Result<(), String> {
 // ---------- health / pwned ----------
 
 #[derive(Serialize)]
-pub struct HealthDto {
+pub struct AuditDto {
+    pub total: usize,
     pub weak: Vec<WeakDto>,
     pub reused: Vec<Vec<Uuid>>,
-    pub old: Vec<Uuid>,
-    pub no_totp_candidates: usize,
+    /// password age buckets (by last password change, falling back to created)
+    pub age_3_6m: Vec<Uuid>,
+    pub age_6_12m: Vec<Uuid>,
+    pub age_1_3y: Vec<Uuid>,
+    pub age_3y: Vec<Uuid>,
+    /// entries that have a TOTP secret configured
+    pub with_totp: Vec<Uuid>,
+    pub without_totp: usize,
+    pub with_attachments: usize,
+    pub passkeys: usize,
 }
 
 #[derive(Serialize)]
@@ -515,44 +667,69 @@ pub struct WeakDto {
 }
 
 #[tauri::command]
-pub fn health_report(st: State<'_, AppState>) -> Result<HealthDto, String> {
+pub fn audit_report(st: State<'_, AppState>) -> Result<AuditDto, String> {
     with_session(&st, |s| {
+        let now = chrono::Utc::now();
         let entries: Vec<&Entry> = s
             .unlocked
             .vault
             .entries
             .iter()
-            .filter(|e| !e.deleted && !e.password.is_empty())
+            .filter(|e| !e.deleted && !e.archived)
             .collect();
 
-        let mut weak = Vec::new();
+        let mut report = AuditDto {
+            total: entries.len(),
+            weak: Vec::new(),
+            reused: Vec::new(),
+            age_3_6m: Vec::new(),
+            age_6_12m: Vec::new(),
+            age_1_3y: Vec::new(),
+            age_3y: Vec::new(),
+            with_totp: Vec::new(),
+            without_totp: 0,
+            with_attachments: 0,
+            passkeys: 0,
+        };
         let mut by_password: HashMap<&str, Vec<Uuid>> = HashMap::new();
-        let mut old = Vec::new();
-        let year_ago = chrono::Utc::now() - chrono::Duration::days(365);
 
         for e in &entries {
+            if e.totp.is_some() {
+                report.with_totp.push(e.id);
+            } else {
+                report.without_totp += 1;
+            }
+            if !e.attachments.is_empty() {
+                report.with_attachments += 1;
+            }
+            if e.passkey.is_some() {
+                report.passkeys += 1;
+            }
+            if e.password.is_empty() {
+                continue;
+            }
             let est = strength::estimate(&e.password, &[&e.username, &e.title]);
             if est.score <= 2 {
-                weak.push(WeakDto {
+                report.weak.push(WeakDto {
                     id: e.id,
                     score: est.score,
                 });
             }
             by_password.entry(e.password.as_str()).or_default().push(e.id);
-            if e.password_changed.unwrap_or(e.created) < year_ago {
-                old.push(e.id);
+            let age_days = (now - e.password_changed.unwrap_or(e.created)).num_days();
+            match age_days {
+                90..=179 => report.age_3_6m.push(e.id),
+                180..=364 => report.age_6_12m.push(e.id),
+                365..=1094 => report.age_1_3y.push(e.id),
+                d if d >= 1095 => report.age_3y.push(e.id),
+                _ => {}
             }
         }
-        let reused: Vec<Vec<Uuid>> = by_password
+        report.reused = by_password
             .into_values()
             .filter(|ids| ids.len() >= 2)
             .collect();
-        Ok(HealthDto {
-            weak,
-            reused,
-            old,
-            no_totp_candidates: entries.iter().filter(|e| e.totp.is_none()).count(),
-        })
+        Ok(report)
     })
 }
 
@@ -711,6 +888,50 @@ pub fn change_master_password(
         state::persist(s)?;
         Ok(())
     })
+}
+
+// ---------- updater ----------
+
+#[derive(Serialize)]
+pub struct UpdateInfoDto {
+    pub version: String,
+    pub notes: Option<String>,
+    pub date: Option<String>,
+}
+
+/// Check GitHub Releases (latest.json) for a newer version. Returns None when
+/// the app is up to date or the endpoint is unreachable (fails soft).
+#[tauri::command]
+pub async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfoDto>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(UpdateInfoDto {
+            version: update.version.clone(),
+            notes: update.body.clone(),
+            date: update.date.map(|d| d.to_string()),
+        })),
+        Ok(None) => Ok(None),
+        Err(e) => Err(format!("Update-Prüfung fehlgeschlagen: {e}")),
+    }
+}
+
+/// Download, verify (signed) and install the update in place, then relaunch.
+/// The vault files and settings live outside the app bundle and are untouched.
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| format!("Update-Prüfung fehlgeschlagen: {e}"))?
+        .ok_or("Kein Update verfügbar")?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| format!("Update fehlgeschlagen: {e}"))?;
+    app.restart();
 }
 
 /// Copy a field of an entry to the clipboard WITHOUT routing the secret

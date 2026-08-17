@@ -18,13 +18,20 @@ Testabdeckung für Format, Krypto, Merge und TOTP; Tauri-Desktop-App
 Import/Export. **Noch kein externer Audit — nicht für echte Passwörter
 verwenden**, siehe Disclaimer auf der Produktseite.
 
-### Features (Free, implementiert)
+### Features (implementiert, Stand v0.2)
 
 - Verschlüsselter Datei-Tresor: Argon2id (64 MiB, t=3, p=4) + AES-256-GCM,
   authentifizierter Header, optionale Schlüsseldatei als zweiter Faktor
-- Einträge mit Benutzername, Passwort, mehreren URLs, Notizen, Tags, Ordnern,
-  eigenen Feldern, Passwort-Historie, Favoriten, Papierkorb
-- TOTP-Generator (RFC 6238, Base32 oder otpauth://-URIs)
+- 10 Kategorien mit Vorlagen (Login, Kreditkarte, Identität, Notiz, Finanzen,
+  Lizenz, Reise, Computer …), eigene Felder, Passwort-Historie, Favoriten,
+  Archiv, Papierkorb
+- TOTP-Generator (RFC 6238, Base32 oder otpauth://-URIs) — unlocked-Feature,
+  in der Alpha frei
+- Verschlüsselte Datei-Anhänge im Tresor (max. 10 MB) — unlocked-Feature
+- Audit-Dashboard: geleakt (HIBP), schwach, identisch, Passwort-Alter,
+  2FA-Abdeckung — Basis-Checks in Free, volles Audit unlocked
+- In-App-Updater: signierte Updates von GitHub Releases, Installation per
+  Klick, Tresor bleibt unberührt
 - Passwort-/Passphrasen-Generator (EFF-Wortliste, 7776 Wörter)
 - Passwort-Check: schwach (zxcvbn), wiederverwendet, alt, geleakt
   (Have-I-Been-Pwned per k-Anonymity — nur 5 Hash-Zeichen verlassen das Gerät)

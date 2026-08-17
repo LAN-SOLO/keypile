@@ -25,12 +25,22 @@ export interface EntrySummary {
   title: string;
   username: string;
   url: string | null;
+  category: string;
   favorite: boolean;
   folder: string | null;
   tags: string[];
   has_totp: boolean;
+  attachment_count: number;
+  archived: boolean;
   deleted: boolean;
   modified: string;
+}
+
+export interface Attachment {
+  id: string;
+  name: string;
+  data: string;
+  size: number;
 }
 
 export interface CustomField {
@@ -42,6 +52,7 @@ export interface CustomField {
 export interface Entry {
   id: string;
   folder: string | null;
+  category: string;
   title: string;
   username: string;
   password: string;
@@ -50,7 +61,9 @@ export interface Entry {
   tags: string[];
   totp: string | null;
   custom_fields: CustomField[];
+  attachments: Attachment[];
   favorite: boolean;
+  archived: boolean;
   created: string;
   modified: string;
   password_changed: string | null;
@@ -61,6 +74,7 @@ export interface Entry {
 export interface EntryInput {
   id: string | null;
   folder: string | null;
+  category: string;
   title: string;
   username: string;
   password: string;
@@ -108,11 +122,24 @@ export interface TotpCode {
   period: number;
 }
 
-export interface Health {
+export interface Audit {
+  total: number;
   weak: { id: string; score: number }[];
   reused: string[][];
-  old: string[];
-  no_totp_candidates: number;
+  age_3_6m: string[];
+  age_6_12m: string[];
+  age_1_3y: string[];
+  age_3y: string[];
+  with_totp: string[];
+  without_totp: number;
+  with_attachments: number;
+  passkeys: number;
+}
+
+export interface UpdateInfo {
+  version: string;
+  notes: string | null;
+  date: string | null;
 }
 
 export interface PwnedHit {
@@ -156,7 +183,15 @@ export const api = {
   copySecret: (text: string) => invoke<void>('copy_secret', { text }),
   copyEntryField: (id: string, field: 'username' | 'password' | 'totp') =>
     invoke<void>('copy_entry_field', { id, field }),
-  healthReport: () => invoke<Health>('health_report'),
+  auditReport: () => invoke<Audit>('audit_report'),
+  setArchived: (id: string, archived: boolean) => invoke<void>('set_archived', { id, archived }),
+  addAttachment: (id: string, filePath: string) => invoke<Entry>('add_attachment', { id, filePath }),
+  removeAttachment: (id: string, attachmentId: string) =>
+    invoke<void>('remove_attachment', { id, attachmentId }),
+  saveAttachment: (id: string, attachmentId: string, destPath: string) =>
+    invoke<void>('save_attachment', { id, attachmentId, destPath }),
+  checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
+  installUpdate: () => invoke<void>('install_update'),
   checkPwned: () => invoke<PwnedHit[]>('check_pwned'),
   importFile: (path: string) => invoke<ImportResult>('import_file', { path }),
   exportCsv: (path: string) => invoke<number>('export_csv_file', { path }),

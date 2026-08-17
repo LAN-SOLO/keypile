@@ -83,12 +83,15 @@ Entry:
 {
   "id": "<uuid v4>",
   "folder": "<uuid|null>",
+  "category": "login | card | identity | note | password | finance | license | travel | computer | misc",
   "title": "…", "username": "…", "password": "…",
   "urls": ["https://…"], "notes": "…", "tags": ["…"],
   "totp": "<base32 | otpauth://-URI | null>",
   "custom_fields": [ { "name": "…", "value": "…", "protected": true } ],
   "passkey": null,
+  "attachments": [ { "id": "<uuid>", "name": "…", "data": "<base64>", "size": 1234 } ],
   "favorite": false,
+  "archived": false,
   "created": "<RFC3339>", "modified": "<RFC3339>",
   "password_changed": "<RFC3339|null>",
   "history": [ { "password": "…", "replaced": "<RFC3339>" } ],
@@ -97,8 +100,15 @@ Entry:
 }
 ```
 
+- `category` bestimmt Vorlage/Icon in der UI; unbekannte Werte werden als
+  `misc` behandelt (Vorwärtskompatibilität ohne Versionssprung).
 - `passkey` ist für WebAuthn-Credentials reserviert (Schema stabil, UI folgt).
+- `attachments`: Dateien liegen base64-codiert IM verschlüsselten Payload
+  (Implementierungen sollten die Größe begrenzen; Referenz-App: 10 MB).
+- `archived` blendet Einträge aus der Hauptliste aus, ohne sie zu löschen.
 - `history` ist auf 10 Einträge begrenzt (neueste zuerst).
+- Alle in Version 1 nachgereichten Felder (`category`, `attachments`,
+  `archived`) haben Defaults — ältere Dateien bleiben ohne Migration lesbar.
 - Unbekannte Felder MÜSSEN beim Lesen erhalten und beim Schreiben
   zurückgeschrieben werden? — Nein: Version 1 definiert das Schema
   abschließend; neue Felder erfordern einen Versionssprung mit `#[serde(default)]`-

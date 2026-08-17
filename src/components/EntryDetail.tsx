@@ -3,10 +3,14 @@ import { api, CustomField, Entry, EntryInput, Folder } from '../api';
 import { useApp } from '../App';
 import StrengthMeter from './StrengthMeter';
 import GeneratorModal from './GeneratorModal';
+import UnlockedBadge from './UnlockedBadge';
 import { confirmDialog } from './MainView';
+import { Category, TEMPLATES, normalizeCategory } from '../templates';
+import { ArchiveIcon, CategoryIcon, PaperclipIcon } from '../icons';
 
 interface Props {
   entryId: string | null; // null = create new
+  newCategory: Category | null;
   folders: Folder[];
   editing: boolean;
   setEditing: (e: boolean) => void;
@@ -14,9 +18,10 @@ interface Props {
   onChanged: (selectId: string | null) => Promise<void>;
 }
 
-const emptyDraft = (): EntryInput => ({
+const draftFor = (cat: Category, t: { templateFields: Record<string, string> }): EntryInput => ({
   id: null,
   folder: null,
+  category: cat,
   title: '',
   username: '',
   password: '',
@@ -24,43 +29,54 @@ const emptyDraft = (): EntryInput => ({
   notes: '',
   tags: [],
   totp: null,
-  custom_fields: [],
+  custom_fields: TEMPLATES[cat].fields.map((f) => {
+    const isProtected = f.startsWith('*');
+    const key = isProtected ? f.slice(1) : f;
+    return { name: t.templateFields[key] ?? key, value: '', protected: isProtected };
+  }),
   favorite: false,
 });
 
 export default function EntryDetail(props: Props) {
   const { t, toast } = useApp();
   const [entry, setEntry] = useState<Entry | null>(null);
-  const [draft, setDraft] = useState<EntryInput>(emptyDraft());
+  const [draft, setDraft] = useState<EntryInput>(draftFor(props.newCategory ?? 'login', t));
   const [revealed, setRevealed] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [genFor, setGenFor] = useState(false);
 
+  const loadEntry = (id: string) =>
+    api.getEntry(id).then((e) => {
+      setEntry(e);
+      setDraft({
+        id: e.id,
+        folder: e.folder,
+        category: e.category,
+        title: e.title,
+        username: e.username,
+        password: e.password,
+        urls: e.urls,
+        notes: e.notes,
+        tags: e.tags,
+        totp: e.totp,
+        custom_fields: e.custom_fields,
+        favorite: e.favorite,
+      });
+    });
+
   useEffect(() => {
     if (props.entryId) {
-      api.getEntry(props.entryId).then((e) => {
-        setEntry(e);
-        setDraft({
-          id: e.id,
-          folder: e.folder,
-          title: e.title,
-          username: e.username,
-          password: e.password,
-          urls: e.urls,
-          notes: e.notes,
-          tags: e.tags,
-          totp: e.totp,
-          custom_fields: e.custom_fields,
-          favorite: e.favorite,
-        });
-      });
+      loadEntry(props.entryId);
     } else {
       setEntry(null);
-      setDraft(emptyDraft());
+      setDraft(draftFor(props.newCategory ?? 'login', t));
     }
     setRevealed(false);
     setShowHistory(false);
-  }, [props.entryId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.entryId, props.newCategory]);
+
+  const template = TEMPLATES[normalizeCategory(draft.category)];
 
   const copyField = async (field: 'username' | 'password' | 'totp') => {
     if (!entry) return;
@@ -86,6 +102,7 @@ export default function EntryDetail(props: Props) {
         urls: draft.urls.map((u) => u.trim()).filter(Boolean),
         tags: draft.tags.map((x) => x.trim()).filter(Boolean),
         totp: draft.totp?.trim() || null,
+        custom_fields: draft.custom_fields.filter((f) => f.name.trim() || f.value.trim()),
       });
       await props.onChanged(saved.id);
     } catch (err) {
@@ -113,11 +130,61 @@ export default function EntryDetail(props: Props) {
     await props.onChanged(entry.id);
   };
 
+  const toggleArchive = async () => {
+    if (!entry) return;
+    await api.setArchived(entry.id, !entry.archived);
+    await props.onChanged(entry.id);
+  };
+
+  const addAttachment = async () => {
+    if (!entry) return;
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const sel = await open({ multiple: false });
+    if (typeof sel !== 'string') return;
+    try {
+      const updated = await api.addAttachment(entry.id, sel);
+      setEntry(updated);
+      await props.onChanged(entry.id);
+    } catch (err) {
+      toast(String(err), true);
+    }
+  };
+
+  const saveAttachment = async (attId: string, name: string) => {
+    if (!entry) return;
+    const { save: saveDialog } = await import('@tauri-apps/plugin-dialog');
+    const sel = await saveDialog({ defaultPath: name });
+    if (typeof sel !== 'string') return;
+    try {
+      await api.saveAttachment(entry.id, attId, sel);
+      toast('✓');
+    } catch (err) {
+      toast(String(err), true);
+    }
+  };
+
+  const removeAttachment = async (attId: string) => {
+    if (!entry) return;
+    if (!(await confirmDialog(t.confirmRemoveAttachment))) return;
+    try {
+      await api.removeAttachment(entry.id, attId);
+      await loadEntry(entry.id);
+      await props.onChanged(entry.id);
+    } catch (err) {
+      toast(String(err), true);
+    }
+  };
+
   const openUrl = async (url: string) => {
     const { openUrl: doOpen } = await import('@tauri-apps/plugin-opener');
     const full = /^https?:\/\//i.test(url) ? url : `https://${url}`;
     await doOpen(full);
   };
+
+  const fmtSize = (bytes: number) =>
+    bytes > 1024 * 1024
+      ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+      : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
   // ---------- edit mode ----------
   if (props.editing) {
@@ -125,7 +192,12 @@ export default function EntryDetail(props: Props) {
     return (
       <div>
         <div className="head">
-          <h2>{entry ? t.edit : t.newEntry}</h2>
+          <span className="cat-chip">
+            <CategoryIcon category={draft.category} size={20} />
+          </span>
+          <h2>
+            {entry ? t.edit : t.newEntry} — {t.categories[normalizeCategory(draft.category)]}
+          </h2>
         </div>
         <label className="field">
           <span>{t.title}</span>
@@ -136,85 +208,68 @@ export default function EntryDetail(props: Props) {
             onChange={(e) => set({ title: e.target.value })}
           />
         </label>
-        <label className="field">
-          <span>{t.username}</span>
-          <input
-            type="text"
-            value={draft.username}
-            onChange={(e) => set({ username: e.target.value })}
-          />
-        </label>
-        <label className="field">
-          <span>{t.password}</span>
-          <div className="row">
+        {template.username && (
+          <label className="field">
+            <span>{t.username}</span>
             <input
-              type={revealed ? 'text' : 'password'}
-              className="mono"
-              value={draft.password}
-              onChange={(e) => set({ password: e.target.value })}
+              type="text"
+              value={draft.username}
+              onChange={(e) => set({ username: e.target.value })}
             />
-            <button type="button" className="noflex" onClick={() => setRevealed(!revealed)}>
-              {revealed ? t.hide : t.reveal}
-            </button>
-            <button type="button" className="noflex" onClick={() => setGenFor(true)}>
-              ⚙︎
-            </button>
-          </div>
-          <StrengthMeter password={draft.password} context={[draft.username, draft.title]} />
-        </label>
-        {[...draft.urls, ''].map((u, i) => (
-          <label className="field" key={i}>
+          </label>
+        )}
+        {template.password && (
+          <label className="field">
+            <span>{t.password}</span>
+            <div className="row">
+              <input
+                type={revealed ? 'text' : 'password'}
+                className="mono"
+                value={draft.password}
+                onChange={(e) => set({ password: e.target.value })}
+              />
+              <button type="button" className="noflex" onClick={() => setRevealed(!revealed)}>
+                {revealed ? t.hide : t.reveal}
+              </button>
+              <button type="button" className="noflex" onClick={() => setGenFor(true)}>
+                ⚙︎
+              </button>
+            </div>
+            <StrengthMeter password={draft.password} context={[draft.username, draft.title]} />
+          </label>
+        )}
+        {template.urls &&
+          [...draft.urls, ''].map((u, i) => (
+            <label className="field" key={i}>
+              <span>
+                {t.url} {i > 0 ? i + 1 : ''}
+              </span>
+              <input
+                type="text"
+                value={u}
+                placeholder={i === draft.urls.length ? t.addUrl : ''}
+                onChange={(e) => {
+                  const urls = [...draft.urls];
+                  if (i === urls.length) urls.push(e.target.value);
+                  else urls[i] = e.target.value;
+                  set({ urls: urls.filter((x, idx) => x !== '' || idx === urls.length - 1) });
+                }}
+              />
+            </label>
+          ))}
+        {template.totp && (
+          <label className="field">
             <span>
-              {t.url} {i > 0 ? i + 1 : ''}
+              {t.totp} <UnlockedBadge />
             </span>
             <input
               type="text"
-              value={u}
-              placeholder={i === draft.urls.length ? t.addUrl : ''}
-              onChange={(e) => {
-                const urls = [...draft.urls];
-                if (i === urls.length) urls.push(e.target.value);
-                else urls[i] = e.target.value;
-                set({ urls: urls.filter((x, idx) => x !== '' || idx === urls.length - 1) });
-              }}
+              className="mono"
+              value={draft.totp ?? ''}
+              onChange={(e) => set({ totp: e.target.value })}
             />
           </label>
-        ))}
-        <label className="field">
-          <span>{t.totp}</span>
-          <input
-            type="text"
-            className="mono"
-            value={draft.totp ?? ''}
-            onChange={(e) => set({ totp: e.target.value })}
-          />
-        </label>
-        <label className="field">
-          <span>{t.tags}</span>
-          <input
-            type="text"
-            value={draft.tags.join(', ')}
-            onChange={(e) => set({ tags: e.target.value.split(',') })}
-          />
-        </label>
-        <label className="field">
-          <span>{t.folders}</span>
-          <select
-            value={draft.folder ?? ''}
-            onChange={(e) => set({ folder: e.target.value || null })}
-          >
-            <option value="">{t.folderNone}</option>
-            {props.folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>{t.notes}</span>
-          <textarea value={draft.notes} onChange={(e) => set({ notes: e.target.value })} />
-        </label>
+        )}
 
         <div className="fieldlabel">{t.customFields}</div>
         {draft.custom_fields.map((f, i) => (
@@ -263,14 +318,55 @@ export default function EntryDetail(props: Props) {
           className="ghost"
           onClick={() =>
             set({
-              custom_fields: [...draft.custom_fields, { name: '', value: '', protected: false } as CustomField],
+              custom_fields: [
+                ...draft.custom_fields,
+                { name: '', value: '', protected: false } as CustomField,
+              ],
             })
           }
         >
           + {t.addField}
         </button>
 
-        <label className="check" style={{ marginTop: 14 }}>
+        <label className="field" style={{ marginTop: 14 }}>
+          <span>{t.notes}</span>
+          <textarea value={draft.notes} onChange={(e) => set({ notes: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>{t.tags}</span>
+          <input
+            type="text"
+            value={draft.tags.join(', ')}
+            onChange={(e) => set({ tags: e.target.value.split(',') })}
+          />
+        </label>
+        <div className="row" style={{ maxWidth: 420 }}>
+          <label className="field">
+            <span>{t.folders}</span>
+            <select
+              value={draft.folder ?? ''}
+              onChange={(e) => set({ folder: e.target.value || null })}
+            >
+              <option value="">{t.folderNone}</option>
+              {props.folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>{t.categoriesSection}</span>
+            <select value={draft.category} onChange={(e) => set({ category: e.target.value })}>
+              {Object.keys(TEMPLATES).map((cat) => (
+                <option key={cat} value={cat}>
+                  {t.categories[cat]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="check">
           <input
             type="checkbox"
             checked={draft.favorite}
@@ -313,6 +409,9 @@ export default function EntryDetail(props: Props) {
   return (
     <div>
       <div className="head">
+        <span className="cat-chip">
+          <CategoryIcon category={entry.category} size={20} />
+        </span>
         <h2>
           {entry.favorite && <span className="star">★ </span>}
           {entry.title}
@@ -320,6 +419,9 @@ export default function EntryDetail(props: Props) {
         {!props.inTrash ? (
           <>
             <button onClick={() => props.setEditing(true)}>{t.edit}</button>
+            <button title={entry.archived ? t.unarchive : t.archive} onClick={toggleArchive}>
+              <ArchiveIcon size={14} />
+            </button>
             <button className="danger" onClick={remove}>
               {t.delete}
             </button>
@@ -389,6 +491,31 @@ export default function EntryDetail(props: Props) {
         <CustomFieldView key={i} field={f} onCopy={() => copyText(f.value)} />
       ))}
 
+      <div className="kv">
+        <div className="fieldlabel">
+          {t.attachments} <UnlockedBadge />
+        </div>
+        {entry.attachments.map((a) => (
+          <div className="val" key={a.id} style={{ marginBottom: 6 }}>
+            <PaperclipIcon size={14} />
+            <span className="text">{a.name}</span>
+            <span className="faint">{fmtSize(a.size)}</span>
+            <button className="icon" onClick={() => saveAttachment(a.id, a.name)}>
+              {t.saveAttachmentAs}
+            </button>
+            <button className="icon danger" onClick={() => removeAttachment(a.id)}>
+              ×
+            </button>
+          </div>
+        ))}
+        <button className="ghost" onClick={addAttachment}>
+          + {t.addAttachment}
+        </button>
+        <div className="faint" style={{ marginTop: 4 }}>
+          {t.attachmentNote}
+        </div>
+      </div>
+
       {entry.tags.length > 0 && (
         <div className="kv">
           {entry.tags.map((tag) => (
@@ -434,13 +561,12 @@ export default function EntryDetail(props: Props) {
 function CustomFieldView({ field, onCopy }: { field: CustomField; onCopy: () => void }) {
   const { t } = useApp();
   const [show, setShow] = useState(false);
+  if (!field.value) return null;
   return (
     <div className="kv">
       <div className="fieldlabel">{field.name}</div>
       <div className="val">
-        <span className="text">
-          {field.protected && !show ? '••••••••' : field.value}
-        </span>
+        <span className="text">{field.protected && !show ? '••••••••' : field.value}</span>
         {field.protected && (
           <button className="icon" onClick={() => setShow(!show)}>
             {show ? t.hide : t.reveal}
@@ -479,7 +605,9 @@ function TotpBlock({ entryId, onCopy }: { entryId: string; onCopy: () => void })
   const pretty = code.code.length === 6 ? `${code.code.slice(0, 3)} ${code.code.slice(3)}` : code.code;
   return (
     <div className="kv">
-      <div className="fieldlabel">{t.totpCode}</div>
+      <div className="fieldlabel">
+        {t.totpCode} <UnlockedBadge />
+      </div>
       <div className="val">
         <span className="text totp-code">{pretty}</span>
         <span className="totp-ring">{code.remaining}s</span>

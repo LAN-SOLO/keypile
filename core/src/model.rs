@@ -10,6 +10,10 @@ use uuid::Uuid;
 /// Used by the merge logic to distinguish "newer" from "concurrent" edits.
 pub type VersionVector = BTreeMap<String, u64>;
 
+fn default_category() -> String {
+    "login".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Vault {
     pub meta: VaultMeta,
@@ -56,11 +60,40 @@ pub struct EntryHistory {
     pub replaced: DateTime<Utc>,
 }
 
+/// File attachment stored inside the encrypted vault payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Attachment {
+    pub id: Uuid,
+    pub name: String,
+    /// Raw file bytes, base64-encoded (kept as string so the payload stays JSON).
+    pub data: String,
+    /// Original size in bytes (pre-base64), for display without decoding.
+    pub size: u64,
+}
+
+/// Entry categories — determine the template (visible fields) and the icon.
+/// Stored as a plain string so future categories don't break old readers.
+pub const CATEGORIES: &[&str] = &[
+    "login",
+    "card",
+    "identity",
+    "note",
+    "password",
+    "finance",
+    "license",
+    "travel",
+    "computer",
+    "misc",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Entry {
     pub id: Uuid,
     #[serde(default)]
     pub folder: Option<Uuid>,
+    /// One of `CATEGORIES`; unknown values are treated as "misc" by UIs.
+    #[serde(default = "default_category")]
+    pub category: String,
     pub title: String,
     #[serde(default)]
     pub username: String,
@@ -82,7 +115,12 @@ pub struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passkey: Option<serde_json::Value>,
     #[serde(default)]
+    pub attachments: Vec<Attachment>,
+    #[serde(default)]
     pub favorite: bool,
+    /// Archived entries are hidden from the main list but stay searchable.
+    #[serde(default)]
+    pub archived: bool,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
     #[serde(default)]
@@ -130,6 +168,7 @@ impl Entry {
         Entry {
             id: Uuid::new_v4(),
             folder: None,
+            category: default_category(),
             title: title.to_string(),
             username: String::new(),
             password: String::new(),
@@ -139,7 +178,9 @@ impl Entry {
             totp: None,
             custom_fields: Vec::new(),
             passkey: None,
+            attachments: Vec::new(),
             favorite: false,
+            archived: false,
             created: now,
             modified: now,
             password_changed: None,

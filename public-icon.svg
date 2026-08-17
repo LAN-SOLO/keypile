@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2740"/>
+      <stop offset="0.55" stop-color="#0f1728"/>
+      <stop offset="1" stop-color="#090e1a"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a5e0fc"/>
+      <stop offset="0.45" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="glyphDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0ea5e9"/>
+      <stop offset="1" stop-color="#075985"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7dd3fc" stop-opacity="0.35"/>
+      <stop offset="0.4" stop-color="#38bdf8" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0.02"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.06" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="26" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <filter id="dotdrop" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect x="8" y="8" width="1008" height="1008" rx="232" fill="url(#bg)"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="232" fill="url(#sheen)"/>
+  <rect x="14" y="14" width="996" height="996" rx="226" fill="none" stroke="url(#edge)" stroke-width="6"/>
+  <g filter="url(#drop)">
+    <path fill="url(#glyph)" fill-rule="evenodd" d="
+      M 512 196
+      a 152 152 0 1 0 0.01 0 Z
+      m 0 68 a 84 84 0 1 1 -0.01 0 Z"/>
+    <path fill="url(#glyph)" d="
+      M 474 486 h 76 v 118 h 112 a 20 20 0 0 1 20 20 v 28 a 20 20 0 0 1 -20 20 h -112 v 40 h 150 a 20 20 0 0 1 20 20 v 28 a 20 20 0 0 1 -20 20 h -150 v 26 a 20 20 0 0 1 -20 20 h -36 a 20 20 0 0 1 -20 -20 Z"/>
+  </g>
+  <circle cx="352" cy="800" r="42" fill="#eef4fa" filter="url(#dotdrop)"/></svg>

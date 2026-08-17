@@ -13,6 +13,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
@@ -31,13 +33,19 @@ fn main() {
             commands::list_folders,
             commands::save_folder,
             commands::delete_folder,
+            commands::set_archived,
+            commands::add_attachment,
+            commands::remove_attachment,
+            commands::save_attachment,
+            commands::check_update,
+            commands::install_update,
             commands::generate_password,
             commands::generate_passphrase,
             commands::password_strength,
             commands::totp_code,
             commands::copy_secret,
             commands::copy_entry_field,
-            commands::health_report,
+            commands::audit_report,
             commands::check_pwned,
             commands::import_file,
             commands::export_csv_file,

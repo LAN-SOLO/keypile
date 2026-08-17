@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { api } from '../api';
+import { getVersion } from '@tauri-apps/api/app';
+import { api, UpdateInfo } from '../api';
 import { useApp } from '../App';
 import { confirmDialog } from './MainView';
 import StrengthMeter from './StrengthMeter';
+import { UpdateIcon } from '../icons';
 
 interface Props {
   onClose: () => void;
@@ -16,6 +18,35 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
   const [newPw, setNewPw] = useState('');
   const [newPw2, setNewPw2] = useState('');
   const [busy, setBusy] = useState(false);
+  const [version, setVersion] = useState('');
+  const [update, setUpdate] = useState<UpdateInfo | null | 'unchecked'>('unchecked');
+  const [updBusy, setUpdBusy] = useState(false);
+
+  useEffect(() => {
+    getVersion().then(setVersion);
+  }, []);
+
+  const doCheckUpdate = async () => {
+    setUpdBusy(true);
+    try {
+      setUpdate(await api.checkUpdate());
+    } catch (err) {
+      toast(String(err), true);
+    } finally {
+      setUpdBusy(false);
+    }
+  };
+
+  const doInstallUpdate = async () => {
+    setUpdBusy(true);
+    toast(t.updateInstalling);
+    try {
+      await api.installUpdate();
+    } catch (err) {
+      toast(String(err), true);
+      setUpdBusy(false);
+    }
+  };
 
   const doImport = async () => {
     const sel = await open({
@@ -192,6 +223,28 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
             >
               {t.changeMaster}
             </button>
+          </div>
+
+          <div className="settings-section">
+            <h4>{t.checkForUpdates}</h4>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <span className="faint mono noflex">
+                {t.currentVersion}: v{version}
+              </span>
+              {update !== 'unchecked' && update !== null ? (
+                <button className="primary" onClick={doInstallUpdate} disabled={updBusy}>
+                  <UpdateIcon size={13} /> {t.updateAvailable(update.version)} — {t.updateNow}
+                </button>
+              ) : (
+                <button onClick={doCheckUpdate} disabled={updBusy}>
+                  {updBusy ? t.updateChecking : t.checkForUpdates}
+                </button>
+              )}
+            </div>
+            {update === null && <div className="ok-text">{t.upToDate}</div>}
+            <div className="faint" style={{ marginTop: 6 }}>
+              {t.updateSafeNote}
+            </div>
           </div>
 
           <div className="settings-section">

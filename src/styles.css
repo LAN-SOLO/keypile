@@ -274,6 +274,114 @@ label.check input { accent-color: var(--blue-dim); }
 .sev-red { color: var(--red); }
 .sev-yellow { color: var(--yellow); }
 
+/* ---------- sidebar icons & badges ---------- */
+.side-item svg { color: var(--text-faint); }
+.side-item.active svg { color: var(--blue); }
+.side-item:disabled { opacity: 0.5; cursor: default; }
+.side-item:disabled:hover { background: transparent; color: var(--text-dim); }
+.badge.soon {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+.side-item .badge.soon + .count { margin-left: 6px; }
+.update-item { color: var(--green); }
+.update-item svg { color: var(--green); }
+
+.entry-item .cat-ico { color: var(--text-faint); display: inline-flex; }
+.entry-item .title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--blue);
+  flex-shrink: 0;
+}
+
+/* ---------- template picker ---------- */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.template-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+}
+.template-tile:hover { border-color: var(--blue-dim); color: var(--text); background: var(--bg-raised); }
+.template-tile svg { color: var(--blue); }
+
+/* ---------- unlocked badge ---------- */
+.unlocked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--blue);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 20px;
+  padding: 1px 7px;
+  vertical-align: 1px;
+  cursor: help;
+}
+
+/* ---------- audit stat tiles ---------- */
+.tile-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  max-width: 760px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: left;
+  cursor: default;
+}
+.stat-tile.clickable { cursor: pointer; }
+.stat-tile.clickable:hover { border-color: var(--blue-dim); background: var(--bg-raised); }
+.stat-tile:disabled { opacity: 1; }
+.tile-num {
+  font-size: 34px;
+  font-weight: 600;
+  font-family: var(--mono);
+  line-height: 1;
+}
+.tile-num.is-serious { color: var(--red); }
+.tile-num.is-warning { color: var(--yellow); }
+.tile-num.is-good { color: var(--green); }
+.tile-num.is-info { color: var(--blue); }
+.tile-num.is-zero { color: var(--green); }
+.tile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.tile-label svg { color: var(--text-faint); }
+
 .toast {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
   background: var(--bg-raised); border: 1px solid var(--border);
