@@ -144,10 +144,12 @@ jobs:
           print(json.dumps(manifest, indent=2))
           EOF
 
+      # NICHT als prerelease publishen: der Updater-Endpoint releases/latest/
+      # ignoriert Prereleases — Alpha-Status steht im README/Disclaimer.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: true
+          prerelease: false
           files: |
             artifacts/*.dmg
             artifacts/*.app.tar.gz
