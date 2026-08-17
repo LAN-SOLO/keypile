@@ -122,9 +122,9 @@ const de = {
   planFree: 'Free — dauerhaft kostenlos',
   planFreeDesc:
     'Der lokale Tresor ohne Limits: unbegrenzte Einträge, alle Kategorien & Vorlagen, Generator, Basis-Passwort-Check (schwach/identisch), Import/Export, Schlüsseldatei, Updates. Sync über deinen eigenen Cloud-Speicher: Tresor-Datei einfach in Dropbox / Google Drive / iCloud Drive legen — der Anbieter sieht nur Chiffretext, keypile führt externe Änderungen automatisch zusammen.',
-  planUnlocked: 'unlocked — coming soon',
+  planUnlocked: 'unlocked — 12 € / Jahr (1 € pro Monat)',
   planUnlockedDesc:
-    'Einmalcodes (TOTP/2FA), verschlüsselte Anhänge, das volle Audit (Leak-Abgleich, Passwort-Alter), Passkeys — plus künftig Browser-Autofill (Chrome, Firefox, browse), E2E-Geräte-Sync ohne Cloud-Laufwerk und sicheres Teilen. In der Alpha sind alle unlocked-Features kostenlos testbar.',
+    'Einmalcodes (TOTP/2FA), verschlüsselte Anhänge, das volle Audit (Leak-Abgleich, Passwort-Alter), Passkeys — plus künftig Browser-Autofill (Chrome, Firefox, browse), E2E-Geräte-Sync ohne Cloud-Laufwerk und sicheres Teilen. Buchbar zum Beta-Start; in der Alpha sind alle unlocked-Features kostenlos testbar.',
   planWaitlist: 'Warteliste auf lan-solo.com/tools/keypile',
   vaultInfo: 'Tresor',
   syncHint:
@@ -343,9 +343,9 @@ const en: typeof de = {
   planFree: 'Free — free forever',
   planFreeDesc:
     'The local vault with no limits: unlimited entries, all categories & templates, generator, basic password check (weak/identical), import/export, key file, updates. Sync via your own cloud storage: just put the vault file in Dropbox / Google Drive / iCloud Drive — the provider only ever sees ciphertext, keypile merges external changes automatically.',
-  planUnlocked: 'unlocked — coming soon',
+  planUnlocked: 'unlocked — €12 / year (€1 per month)',
   planUnlockedDesc:
-    'One-time codes (TOTP/2FA), encrypted attachments, the full audit (breach check, password age), passkeys — plus, later, browser autofill (Chrome, Firefox, browse), E2E device sync without a cloud drive and secure sharing. During the alpha every unlocked feature is free to test.',
+    'One-time codes (TOTP/2FA), encrypted attachments, the full audit (breach check, password age), passkeys — plus, later, browser autofill (Chrome, Firefox, browse), E2E device sync without a cloud drive and secure sharing. Purchasable from the beta; during the alpha every unlocked feature is free to test.',
   planWaitlist: 'Waitlist at lan-solo.com/tools/keypile',
   vaultInfo: 'Vault',
   syncHint:

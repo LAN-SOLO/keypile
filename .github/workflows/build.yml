@@ -166,6 +166,22 @@ jobs:
           print(json.dumps(manifest, indent=2))
           EOF
 
+      # Stabile Download-Aliase: die Website verlinkt
+      # releases/latest/download/<stabiler Name> — versionsunabhängig.
+      - name: Create stable-named download aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          alias_cp() { src=$(ls $1 2>/dev/null | head -1 || true); [ -n "$src" ] && cp "$src" "$2" && echo "$2 <- $src" || echo "WARN: no match for $1"; }
+          alias_cp '*_aarch64.dmg'        keypile-macos-arm64.dmg
+          alias_cp '*_x64.dmg'            keypile-macos-intel.dmg
+          alias_cp '*-setup.exe'          keypile-windows-setup.exe
+          alias_cp '*_en-US.msi'          keypile-windows.msi
+          alias_cp '*_amd64.deb'          keypile-linux-amd64.deb
+          alias_cp '*.x86_64.rpm'         keypile-linux-x86_64.rpm
+          alias_cp '*_amd64.AppImage'     keypile-linux-x86_64.AppImage
+
       # NICHT als prerelease publishen: der Updater-Endpoint releases/latest/
       # ignoriert Prereleases — Alpha-Status steht im README/Disclaimer.
       - name: Publish release
@@ -184,4 +200,5 @@ jobs:
             artifacts/*.rpm
             artifacts/*.AppImage
             artifacts/*.AppImage.sig
+            artifacts/keypile-*
             artifacts/latest.json

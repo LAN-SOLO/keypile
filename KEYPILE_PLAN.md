@@ -3,7 +3,8 @@
 Passwortmanager ohne Entweder-oder: der lokale, dateibasierte Tresor von
 KeePassXC plus der Überall-Zugriff von Vaultwarden — ohne dass Nutzer:innen
 selbst einen Server betreiben müssen. Free bleibt dauerhaft kostenlos und
-komplett offline nutzbar; **unlocked** (Preis/Start folgt zur Beta) ergänzt
+komplett offline nutzbar; **unlocked** (12 €/Jahr = 1 €/Monat, buchbar zur
+Beta) ergänzt Einmalcodes, Anhänge, das volle Audit sowie künftig
 Browser-Autofill, Geräte-Sync ohne Cloud-Laufwerk und sicheres Teilen.
 
 Produktseite: https://lan-solo.com/de/tools/keypile/
@@ -14,7 +15,7 @@ Produktseite: https://lan-solo.com/de/tools/keypile/
 
 | | Free | unlocked (coming soon) |
 |---|---|---|
-| Preis | 0 € (dauerhaft) | noch offen, zur Beta |
+| Preis | 0 € (dauerhaft) | 12 €/Jahr (1 €/Monat), buchbar zur Beta |
 | Tresor | lokal, unbegrenzte Einträge, alle Kategorien/Vorlagen | alles aus Free |
 | Sync | über eigenen Cloud-Speicher (Dropbox, Google Drive, iCloud Drive, WebDAV) | zusätzlich: E2E-Geräte-Sync ohne Cloud-Laufwerk |
 | Autofill | — (manuelles Kopieren / Auto-Type) | Browser-Plugin (Chrome, Firefox, browse) |
