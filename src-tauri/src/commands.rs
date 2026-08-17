@@ -239,6 +239,10 @@ pub fn save_entry(
     input: EntryInput,
 ) -> Result<Entry, String> {
     let device_id = settings::load(&app).device_id;
+    // validate TOTP up front so broken secrets never enter the vault
+    if let Some(t) = input.totp.as_deref().filter(|t| !t.trim().is_empty()) {
+        totp::parse(t).map_err(|e| e.to_string())?;
+    }
     with_session(&st, |s| {
         let vault = &mut s.unlocked.vault;
         let entry = match input.id.and_then(|id| vault.entry_mut(id)) {
@@ -286,10 +290,6 @@ pub fn save_entry(
                 e
             }
         };
-        // validate TOTP early so broken secrets don't sit silently in the vault
-        if let Some(t) = &entry.totp {
-            totp::parse(t).map_err(|e| e.to_string())?;
-        }
         state::persist(s)?;
         Ok(entry)
     })
