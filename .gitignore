@@ -1,11 +1,16 @@
-# Rust core + Tauri desktop apps (planned stack, see KEYPILE_PLAN.md)
+# Rust
 /target/
 /src-tauri/target/
+/src-tauri/gen/
 
 # JS/WASM tooling
 node_modules/
 dist/
 *.wasm
+
+# local vaults / test data
+*.keypile
+*.keypile.bak
 
 .DS_Store
 *.local

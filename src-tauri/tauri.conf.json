@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "keypile",
+  "version": "0.1.0",
+  "identifier": "com.lan-solo.keypile",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "keypile",
+        "width": 1120,
+        "height": 740,
+        "minWidth": 880,
+        "minHeight": 560,
+        "resizable": true,
+        "backgroundColor": "#0b1220"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "msi", "nsis", "deb", "rpm", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "Passwortmanager: lokaler Tresor, Sync über deinen Cloud-Speicher",
+    "longDescription": "keypile ist ein Zero-Knowledge-Passwortmanager: ein verschlüsselter, dateibasierter Tresor (Argon2id + AES-256-GCM), der komplett offline funktioniert und sich über deinen eigenen Cloud-Speicher synchronisieren lässt.",
+    "linux": {
+      "deb": { "depends": [] },
+      "rpm": { "depends": [] }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}

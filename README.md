@@ -8,14 +8,59 @@ Drive, iCloud Drive, WebDAV) — kein Konto, kein Server nötig. **unlocked**
 Geräte-Sync ohne eigenes Cloud-Laufwerk, sicheres Teilen.
 
 Produktseite: https://lan-solo.com/de/tools/keypile/ · Plan: `KEYPILE_PLAN.md`
-(Produktdefinition, Architektur, Sicherheitskonzept, Roadmap).
+· Tresorformat: `FORMAT.md`
 
 ## Status
 
-**Planungsphase.** Noch kein Code — `KEYPILE_PLAN.md` legt Format, Kryptografie
-und Architektur fest, bevor implementiert wird. Ein Passwortmanager bekommt
-keine halben Sachen: Tresor-Format und Verschlüsselung werden dokumentiert und
-extern geprüft, bevor es eine Beta gibt (siehe Disclaimer auf der Produktseite).
+**Phase 1 — Desktop Free (Alpha).** Rust-Core (`core/`) mit vollständiger
+Testabdeckung für Format, Krypto, Merge und TOTP; Tauri-Desktop-App
+(`src-tauri/` + `src/`) mit Tresor-UI, Generator, Passwort-Check und
+Import/Export. **Noch kein externer Audit — nicht für echte Passwörter
+verwenden**, siehe Disclaimer auf der Produktseite.
+
+### Features (Free, implementiert)
+
+- Verschlüsselter Datei-Tresor: Argon2id (64 MiB, t=3, p=4) + AES-256-GCM,
+  authentifizierter Header, optionale Schlüsseldatei als zweiter Faktor
+- Einträge mit Benutzername, Passwort, mehreren URLs, Notizen, Tags, Ordnern,
+  eigenen Feldern, Passwort-Historie, Favoriten, Papierkorb
+- TOTP-Generator (RFC 6238, Base32 oder otpauth://-URIs)
+- Passwort-/Passphrasen-Generator (EFF-Wortliste, 7776 Wörter)
+- Passwort-Check: schwach (zxcvbn), wiederverwendet, alt, geleakt
+  (Have-I-Been-Pwned per k-Anonymity — nur 5 Hash-Zeichen verlassen das Gerät)
+- Import: CSV (Chrome, KeePassXC, LastPass, Bitwarden, 1Password) und
+  Bitwarden-JSON; Export: CSV (mit Warnung)
+- Cloud-Sync über beliebige Sync-Ordner: externe Änderungen an der
+  Tresor-Datei werden per Versionsvektor-Merge zusammengeführt — Konflikte
+  landen als Kopien im Tresor, nie stiller Datenverlust
+- Auto-Lock, Sperren bei Fokusverlust, Zwischenablage-Auto-Clear,
+  Master-Passwort-Wechsel, DE/EN
+
+## Entwicklung
+
+Voraussetzungen: Rust (stable), Node 22, pnpm.
+
+```sh
+pnpm install
+pnpm exec tauri dev      # Dev-App
+cargo test -p keypile-core   # Core-Tests (Format/Krypto/Merge/TOTP/Import)
+pnpm exec tauri build    # Release-Bundles (macOS: .app + .dmg)
+```
+
+Windows (`.msi`/`.exe`) und Linux (`.deb`/`.rpm`/`.AppImage`) baut die CI:
+`.github/workflows/build.yml` läuft bei Tags (`v*`) und manuell
+(workflow_dispatch) und lädt die Bundles als Artefakte hoch; bei Tags entsteht
+ein Draft-Release.
+
+## Architektur
+
+- `core/` — **keypile-core**: Tresorformat, Krypto, Merge, TOTP, Generator,
+  Import/Export. Kein Netzwerkzugriff, keine UI-Abhängigkeiten; kompiliert
+  nativ und (später) zu WASM. Die einzige Format-Implementierung.
+- `src-tauri/` — Desktop-App-Schicht: Sitzung/Schlüssel-Handling (zeroized),
+  atomares Speichern mit externem Change-Merge, HIBP-Abfrage, Zwischenablage,
+  Einstellungen.
+- `src/` — React-UI (Vite, TypeScript), dunkles LAN-SOLO-Theme, DE/EN.
 
 ## Verwandte Repositories
 

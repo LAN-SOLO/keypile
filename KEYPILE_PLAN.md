@@ -135,12 +135,16 @@ einer Stelle.
 
 ## 5. Roadmap
 
-- **Phase 0 — Format & Core:** `.keypile`-Formatspezifikation, Rust-Core
-  (Argon2id, AES-256-GCM, Versionsvektor-Merge), Property-Tests gegen
-  Kryptobibliotheken, erste CLI zum Erstellen/Lesen eines Tresors
-- **Phase 1 — Desktop Free:** Tauri-App (macOS zuerst, dann Windows/Linux),
-  Tresor-UI, Auto-Type, TOTP, Passwort-Check, Import (KeePass/Bitwarden/CSV),
-  Cloud-Sync-Adapter (Dropbox/Google Drive/iCloud Drive/WebDAV)
+- **Phase 0 — Format & Core: ✅ umgesetzt (08/2026).** `.keypile`-Spezifikation
+  in `FORMAT.md`, Rust-Core in `core/` (Argon2id, AES-256-GCM mit
+  authentifiziertem Header, Versionsvektor-Merge, TOTP inkl. RFC-6238-
+  Testvektoren, Generator, Import/Export) mit Testabdeckung
+- **Phase 1 — Desktop Free: ✅ Alpha umgesetzt (08/2026).** Tauri-App mit
+  Tresor-UI, TOTP, Passwort-Check (zxcvbn + HIBP-k-Anonymity), Import
+  (CSV/Bitwarden-JSON), Sync über beliebige Cloud-Sync-Ordner mit
+  automatischem Merge externer Änderungen. CI baut macOS/Windows/Linux-
+  Bundles. Noch offen aus Phase 1: Auto-Type, KDBX-Direktimport,
+  dedizierte Cloud-API-Adapter (WebDAV & Co.), SSH-Agent, CLI
 - **Phase 2 — Externer Audit & Beta:** unabhängiges Audit von Format +
   Kryptografie, öffentliche Spezifikation, öffentliche Beta von Free
 - **Phase 3 — unlocked:** Browser-Plugin (Autofill, WASM-Core), E2E-Relay-Sync
