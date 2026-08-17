@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { api, Settings, Status } from './api';
+import { api, Settings, Status, UpdateInfo } from './api';
 import { Dict, dictionaries } from './i18n';
 import UnlockScreen from './components/UnlockScreen';
 import MainView from './components/MainView';
+import UpdateModal from './components/UpdateModal';
 
 interface AppCtx {
   t: Dict;
@@ -12,6 +13,9 @@ interface AppCtx {
   status: Status;
   refreshStatus: () => Promise<void>;
   lock: () => Promise<void>;
+  /** available update found by the startup check (null = none known) */
+  update: UpdateInfo | null;
+  openUpdateModal: () => void;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -21,6 +25,8 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [toastMsg, setToastMsg] = useState<{ msg: string; err: boolean } | null>(null);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const toastTimer = useRef<number>(0);
   const lockTimer = useRef<number>(0);
 
@@ -31,6 +37,15 @@ export default function App() {
   useEffect(() => {
     api.getSettings().then(setSettings);
     refreshStatus();
+    // silent update check on app start; when an update exists the changelog
+    // dialog opens once (dismissable — buttons in sidebar/settings remain)
+    api
+      .checkUpdate()
+      .then((u) => {
+        setUpdate(u);
+        if (u) setShowUpdateModal(true);
+      })
+      .catch(() => {});
   }, [refreshStatus]);
 
   const toast = useCallback((msg: string, isError = false) => {
@@ -83,8 +98,23 @@ export default function App() {
   const t = dictionaries[settings.language] ?? dictionaries.en;
 
   return (
-    <Ctx.Provider value={{ t, settings, updateSettings, toast, status, refreshStatus, lock }}>
+    <Ctx.Provider
+      value={{
+        t,
+        settings,
+        updateSettings,
+        toast,
+        status,
+        refreshStatus,
+        lock,
+        update,
+        openUpdateModal: () => setShowUpdateModal(true),
+      }}
+    >
       {status.locked ? <UnlockScreen /> : <MainView key={status.path ?? ''} />}
+      {showUpdateModal && update && (
+        <UpdateModal info={update} onClose={() => setShowUpdateModal(false)} />
+      )}
       {toastMsg && <div className={`toast${toastMsg.err ? ' err' : ''}`}>{toastMsg.msg}</div>}
     </Ctx.Provider>
   );

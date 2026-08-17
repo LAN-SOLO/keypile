@@ -6,6 +6,7 @@ import { useApp } from '../App';
 import { confirmDialog } from './MainView';
 import StrengthMeter from './StrengthMeter';
 import { UpdateIcon } from '../icons';
+import UpdateModal from './UpdateModal';
 
 interface Props {
   onClose: () => void;
@@ -37,16 +38,7 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
     }
   };
 
-  const doInstallUpdate = async () => {
-    setUpdBusy(true);
-    toast(t.updateInstalling);
-    try {
-      await api.installUpdate();
-    } catch (err) {
-      toast(String(err), true);
-      setUpdBusy(false);
-    }
-  };
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const doImport = async () => {
     const sel = await open({
@@ -232,7 +224,7 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
                 {t.currentVersion}: v{version}
               </span>
               {update !== 'unchecked' && update !== null ? (
-                <button className="primary" onClick={doInstallUpdate} disabled={updBusy}>
+                <button className="primary" onClick={() => setShowUpdateModal(true)} disabled={updBusy}>
                   <UpdateIcon size={13} /> {t.updateAvailable(update.version)} — {t.updateNow}
                 </button>
               ) : (
@@ -272,6 +264,9 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
           <button onClick={onClose}>{t.close}</button>
         </div>
       </div>
+      {showUpdateModal && update !== 'unchecked' && update !== null && (
+        <UpdateModal info={update} onClose={() => setShowUpdateModal(false)} />
+      )}
     </div>
   );
 }

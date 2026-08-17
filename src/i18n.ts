@@ -220,6 +220,11 @@ const de = {
     'Der Tresor liegt außerhalb der App und bleibt beim Update unverändert.',
   checkForUpdates: 'Nach Updates suchen',
   currentVersion: 'Installierte Version',
+  updateModalTitle: (v: string) => `Update auf Version ${v}`,
+  changelogTitle: 'Was ist neu',
+  noChangelog: 'Keine Änderungsnotizen verfügbar.',
+  updateLater: 'Später',
+  publishedOn: (d: string) => `Veröffentlicht: ${d}`,
   // unlocked gating
   unlockedBadge: 'unlocked',
   alphaPreviewNote:
@@ -429,6 +434,11 @@ const en: typeof de = {
   updateSafeNote: 'Your vault lives outside the app and is untouched by updates.',
   checkForUpdates: 'Check for updates',
   currentVersion: 'Installed version',
+  updateModalTitle: (v: string) => `Update to version ${v}`,
+  changelogTitle: "What's new",
+  noChangelog: 'No release notes available.',
+  updateLater: 'Later',
+  publishedOn: (d: string) => `Published: ${d}`,
   unlockedBadge: 'unlocked',
   alphaPreviewNote:
     'unlocked feature — free to test during the alpha. It becomes part of the subscription when unlocked launches.',

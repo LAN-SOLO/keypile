@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, EntrySummary, Folder, UpdateInfo } from '../api';
+import { api, EntrySummary, Folder } from '../api';
 import { useApp } from '../App';
 import EntryDetail from './EntryDetail';
 import GeneratorModal from './GeneratorModal';
@@ -36,7 +36,7 @@ export type Filter =
   | { kind: 'folder'; id: string };
 
 export default function MainView() {
-  const { t, toast, lock, refreshStatus } = useApp();
+  const { t, toast, lock, refreshStatus, update, openUpdateModal } = useApp();
   const [entries, setEntries] = useState<EntrySummary[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
@@ -47,8 +47,6 @@ export default function MainView() {
   const [showGenerator, setShowGenerator] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [update, setUpdate] = useState<UpdateInfo | null>(null);
-  const [updating, setUpdating] = useState(false);
 
   const reload = useCallback(async () => {
     const [es, fs] = await Promise.all([api.listEntries(), api.listFolders()]);
@@ -60,22 +58,6 @@ export default function MainView() {
   useEffect(() => {
     reload();
   }, [reload]);
-
-  // silent update check once per unlocked session
-  useEffect(() => {
-    api.checkUpdate().then(setUpdate).catch(() => {});
-  }, []);
-
-  const doUpdate = async () => {
-    setUpdating(true);
-    toast(t.updateInstalling);
-    try {
-      await api.installUpdate();
-    } catch (err) {
-      toast(String(err), true);
-      setUpdating(false);
-    }
-  };
 
   const visible = useMemo(() => {
     let list = entries;
@@ -252,8 +234,8 @@ export default function MainView() {
 
         <div className="bottom">
           {update && (
-            <button className="side-item update-item" onClick={doUpdate} disabled={updating}>
-              <UpdateIcon /> {updating ? '…' : t.updateAvailable(update.version)}
+            <button className="side-item update-item" onClick={openUpdateModal}>
+              <UpdateIcon /> {t.updateAvailable(update.version)}
             </button>
           )}
           <button className="side-item" onClick={() => setShowGenerator(true)}>

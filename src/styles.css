@@ -382,6 +382,21 @@ label.check input { accent-color: var(--blue-dim); }
 }
 .tile-label svg { color: var(--text-faint); }
 
+.changelog-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .toast {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
   background: var(--bg-raised); border: 1px solid var(--border);

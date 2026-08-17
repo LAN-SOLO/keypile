@@ -97,10 +97,32 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Generate changelog since previous release
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREV=$(git tag --sort=-v:refname | grep -vx "$GITHUB_REF_NAME" | head -1 || true)
+          if [ -n "$PREV" ]; then
+            RANGE="$PREV..$GITHUB_REF_NAME"
+          else
+            RANGE="$GITHUB_REF_NAME"
+          fi
+          git log $RANGE --no-merges --pretty='- %s' \
+            | grep -viE '^\- (ci|chore)(\(|:)' > artifacts/CHANGELOG.txt || true
+          if [ ! -s artifacts/CHANGELOG.txt ]; then
+            echo "- Wartungs-Update" > artifacts/CHANGELOG.txt
+          fi
+          echo "Changelog ($RANGE):"
+          cat artifacts/CHANGELOG.txt
 
       - name: Build updater manifest (latest.json)
         shell: bash
@@ -110,10 +132,10 @@ jobs:
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           cd artifacts
           find . -type f -exec mv -t . {} + 2>/dev/null || true
-          sig() { cat "$1" 2>/dev/null || echo ""; }
           python3 - "$VERSION" "$BASE" <<'EOF'
           import json, sys, glob, os, datetime
           version, base = sys.argv[1], sys.argv[2]
+          notes = open("CHANGELOG.txt").read().strip()
           def find(pat):
               m = glob.glob(pat)
               return m[0] if m else None
@@ -136,7 +158,7 @@ jobs:
               }
           manifest = {
               "version": version,
-              "notes": f"keypile v{version}",
+              "notes": notes,
               "pub_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "platforms": platforms,
           }
@@ -150,6 +172,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           prerelease: false
+          body_path: artifacts/CHANGELOG.txt
           files: |
             artifacts/*.dmg
             artifacts/*.app.tar.gz
