@@ -4,6 +4,7 @@ import { Dict, dictionaries } from './i18n';
 import UnlockScreen from './components/UnlockScreen';
 import MainView from './components/MainView';
 import UpdateModal from './components/UpdateModal';
+import Help from './components/Help';
 
 interface AppCtx {
   t: Dict;
@@ -112,6 +113,7 @@ export default function App() {
       }}
     >
       {status.locked ? <UnlockScreen /> : <MainView key={status.path ?? ''} />}
+      <Help lang={settings.language} />
       {showUpdateModal && update && (
         <UpdateModal info={update} onClose={() => setShowUpdateModal(false)} />
       )}
