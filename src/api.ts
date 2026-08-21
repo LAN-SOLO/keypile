@@ -43,10 +43,31 @@ export interface Attachment {
   size: number;
 }
 
+export const FIELD_TYPES = [
+  'text',
+  'multiline',
+  'password',
+  'pin',
+  'numeric',
+  'date',
+  'email',
+  'url',
+  'phone',
+  'username',
+  'section',
+] as const;
+
+export type FieldType = (typeof FIELD_TYPES)[number];
+
+export function normalizeFieldType(t: string | null | undefined): FieldType {
+  return (FIELD_TYPES as readonly string[]).includes(t ?? '') ? (t as FieldType) : 'text';
+}
+
 export interface CustomField {
   name: string;
   value: string;
   protected: boolean;
+  field_type: string;
 }
 
 export interface Entry {

@@ -1,6 +1,6 @@
 [package]
 name = "keypile"
-version = "0.2.3"
+version = "0.3.0"
 description = "keypile — Passwortmanager: lokaler Tresor, Sync über deinen Cloud-Speicher"
 edition = "2021"
 license = "MIT"

@@ -237,6 +237,7 @@ pub fn import_bitwarden_json(data: &str, device_id: &str) -> Result<ImportResult
                         .unwrap_or("")
                         .to_string(),
                     protected: f.get("type").and_then(Value::as_i64) == Some(1),
+                    ..Default::default()
                 });
             }
         }

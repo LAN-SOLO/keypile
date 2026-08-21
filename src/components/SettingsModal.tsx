@@ -256,7 +256,7 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
                 <span className="name">keypile</span>
                 <span className="dot">.</span>
               </span>{' '}
-              v0.1.0 — {t.aboutText}
+              v{version} — {t.aboutText}
             </p>
           </div>
         </div>

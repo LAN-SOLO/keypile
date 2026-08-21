@@ -87,7 +87,7 @@ Entry:
   "title": "…", "username": "…", "password": "…",
   "urls": ["https://…"], "notes": "…", "tags": ["…"],
   "totp": "<base32 | otpauth://-URI | null>",
-  "custom_fields": [ { "name": "…", "value": "…", "protected": true } ],
+  "custom_fields": [ { "name": "…", "value": "…", "protected": true, "field_type": "text" } ],
   "passkey": null,
   "attachments": [ { "id": "<uuid>", "name": "…", "data": "<base64>", "size": 1234 } ],
   "favorite": false,
@@ -105,6 +105,10 @@ Entry:
 - `passkey` ist für WebAuthn-Credentials reserviert (Schema stabil, UI folgt).
 - `attachments`: Dateien liegen base64-codiert IM verschlüsselten Payload
   (Implementierungen sollten die Größe begrenzen; Referenz-App: 10 MB).
+- `custom_fields[].field_type` ist ein freier String (Default `"text"`).
+  Bekannte Werte: `text`, `multiline`, `password`, `pin`, `numeric`, `date`,
+  `email`, `url`, `phone`, `username`, `section` (Überschriften-Zeile ohne
+  Wert). Unbekannte Werte werden als `text` dargestellt.
 - `archived` blendet Einträge aus der Hauptliste aus, ohne sie zu löschen.
 - `history` ist auf 10 Einträge begrenzt (neueste zuerst).
 - Alle in Version 1 nachgereichten Felder (`category`, `attachments`,

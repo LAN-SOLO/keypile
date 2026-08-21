@@ -45,13 +45,35 @@ pub struct Folder {
     pub vv: VersionVector,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+/// Known custom-field types. Free-form string in the payload so future types
+/// don't break old readers; UIs treat unknown values as "text".
+/// Current set: text, multiline, password, pin, numeric, date, email, url,
+/// phone, username, section (heading row without a value).
+fn default_field_type() -> String {
+    "text".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CustomField {
     pub name: String,
     pub value: String,
     /// Protected fields are masked in the UI until revealed.
     #[serde(default)]
     pub protected: bool,
+    /// One of the known field types (see `default_field_type`).
+    #[serde(default = "default_field_type")]
+    pub field_type: String,
+}
+
+impl Default for CustomField {
+    fn default() -> Self {
+        CustomField {
+            name: String::new(),
+            value: String::new(),
+            protected: false,
+            field_type: default_field_type(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

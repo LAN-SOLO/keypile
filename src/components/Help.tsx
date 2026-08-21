@@ -65,7 +65,7 @@ const de: Content = {
       title: 'Einträge & Kategorien',
       body: [
         '„Neuer Eintrag“ öffnet die Vorlagen-Auswahl: Login, Karte, Notiz und mehr — jede Vorlage bringt die passenden Felder mit.',
-        'Eigene Felder lassen sich jederzeit ergänzen, sensible Felder werden verdeckt dargestellt.',
+        'Eigene Felder lassen sich jederzeit ergänzen — mit Typ (Text, Passwort, PIN, Datum, URL …), per Drag & Drop anordenbar und in Abschnitte gruppierbar; sensible Felder werden verdeckt dargestellt.',
         'Ordnung halten: Ordner in der Seitenleiste, Favoriten, Tags und die Suche oben.',
       ],
     },
@@ -117,7 +117,7 @@ const de: Content = {
       title: 'Einträge',
       body: [
         '„Neuer Eintrag“ startet mit einer Vorlage (Login, Karte, Identität, Notiz …) — jede bringt passende Felder mit.',
-        '• Felder — Benutzername, Passwort, URL, Notizen; eigene Felder beliebig ergänzbar, sensible Felder verdeckt',
+        '• Felder — Benutzername, Passwort, URL, Notizen; eigene Felder beliebig ergänzbar (Typ über ⚙︎ wählbar: Text, Mehrzeilig, Passwort, PIN, Zahl, Datum, E-Mail, URL, Telefon), per ≡-Griff neu anordenbar, Abschnitte als Zwischenüberschriften; sensible Felder verdeckt',
         '• Kopieren — Symbol am Feld kopiert den Wert; Passwörter laufen dabei nie durchs UI, sondern direkt vom Tresor in die Zwischenablage',
         '• URL öffnen — startet die hinterlegte Website im Browser',
         '• Verlauf — geänderte Passwörter bleiben in der Eintrags-Historie nachvollziehbar',
@@ -259,7 +259,7 @@ const en: Content = {
       title: 'Entries & categories',
       body: [
         '“New entry” opens the template picker: login, card, note and more — each template brings the right fields.',
-        'Custom fields can be added anytime; sensitive fields are masked.',
+        'Custom fields can be added anytime — typed (text, password, PIN, date, URL …), reorderable via drag & drop and groupable into sections; sensitive fields are masked.',
         'Stay organized: folders in the sidebar, favorites, tags and the search on top.',
       ],
     },
@@ -311,7 +311,7 @@ const en: Content = {
       title: 'Entries',
       body: [
         '“New entry” starts from a template (login, card, identity, note …) — each brings suitable fields.',
-        '• Fields — username, password, URL, notes; custom fields can be added, sensitive fields are masked',
+        '• Fields — username, password, URL, notes; custom fields can be added (pick a type via ⚙︎: text, multiline, password, PIN, number, date, email, URL, phone), reordered via the ≡ handle, sections act as sub-headings; sensitive fields are masked',
         '• Copy — the icon next to a field copies its value; passwords never pass through the UI but go straight from the vault to the clipboard',
         '• Open URL — launches the stored website in your browser',
         '• History — changed passwords stay traceable in the entry history',

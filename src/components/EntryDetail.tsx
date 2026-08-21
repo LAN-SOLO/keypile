@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { api, CustomField, Entry, EntryInput, Folder } from '../api';
+import { api, CustomField, Entry, EntryInput, FIELD_TYPES, Folder, normalizeFieldType } from '../api';
 import { useApp } from '../App';
 import StrengthMeter from './StrengthMeter';
 import GeneratorModal from './GeneratorModal';
 import UnlockedBadge from './UnlockedBadge';
 import { confirmDialog } from './MainView';
-import { Category, TEMPLATES, normalizeCategory } from '../templates';
+import { Category, TEMPLATES, normalizeCategory, parseTemplateField } from '../templates';
 import { ArchiveIcon, CategoryIcon, PaperclipIcon } from '../icons';
 
 interface Props {
@@ -30,9 +30,13 @@ const draftFor = (cat: Category, t: { templateFields: Record<string, string> }):
   tags: [],
   totp: null,
   custom_fields: TEMPLATES[cat].fields.map((f) => {
-    const isProtected = f.startsWith('*');
-    const key = isProtected ? f.slice(1) : f;
-    return { name: t.templateFields[key] ?? key, value: '', protected: isProtected };
+    const spec = parseTemplateField(f);
+    return {
+      name: t.templateFields[spec.key] ?? spec.key,
+      value: '',
+      protected: spec.protected,
+      field_type: spec.fieldType,
+    };
   }),
   favorite: false,
 });
@@ -44,6 +48,12 @@ export default function EntryDetail(props: Props) {
   const [revealed, setRevealed] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [genFor, setGenFor] = useState(false);
+  // custom-field editing: per-row reveal, options dialog, drag & drop reorder
+  const [cfShow, setCfShow] = useState<Record<number, boolean>>({});
+  const [cfOptions, setCfOptions] = useState<number | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [dragArmed, setDragArmed] = useState<number | null>(null);
 
   const loadEntry = (id: string) =>
     api.getEntry(id).then((e) => {
@@ -73,6 +83,8 @@ export default function EntryDetail(props: Props) {
     }
     setRevealed(false);
     setShowHistory(false);
+    setCfShow({});
+    setCfOptions(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.entryId, props.newCategory]);
 
@@ -272,61 +284,148 @@ export default function EntryDetail(props: Props) {
         )}
 
         <div className="fieldlabel">{t.customFields}</div>
-        {draft.custom_fields.map((f, i) => (
-          <div className="row" key={i} style={{ marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder={t.fieldName}
-              value={f.name}
-              onChange={(e) => {
-                const cf = [...draft.custom_fields];
-                cf[i] = { ...f, name: e.target.value };
-                set({ custom_fields: cf });
-              }}
-            />
-            <input
-              type={f.protected ? 'password' : 'text'}
-              placeholder={t.fieldValue}
-              value={f.value}
-              onChange={(e) => {
-                const cf = [...draft.custom_fields];
-                cf[i] = { ...f, value: e.target.value };
-                set({ custom_fields: cf });
-              }}
-            />
-            <label className="check noflex" style={{ margin: 0 }}>
-              <input
-                type="checkbox"
-                checked={f.protected}
-                onChange={(e) => {
-                  const cf = [...draft.custom_fields];
-                  cf[i] = { ...f, protected: e.target.checked };
-                  set({ custom_fields: cf });
-                }}
+        {draft.custom_fields.map((f, i) => {
+          const ftype = normalizeFieldType(f.field_type);
+          const patchField = (patch: Partial<CustomField>) => {
+            const cf = [...draft.custom_fields];
+            cf[i] = { ...f, ...patch };
+            set({ custom_fields: cf });
+          };
+          const removeField = () => {
+            setCfShow({});
+            set({ custom_fields: draft.custom_fields.filter((_, x) => x !== i) });
+          };
+          const valueInput =
+            ftype === 'multiline' ? (
+              <textarea
+                placeholder={t.fieldValue}
+                value={f.value}
+                rows={3}
+                onChange={(e) => patchField({ value: e.target.value })}
               />
-              {t.protectedField}
-            </label>
-            <button
-              className="ghost icon noflex"
-              onClick={() => set({ custom_fields: draft.custom_fields.filter((_, x) => x !== i) })}
+            ) : (
+              <input
+                type={
+                  f.protected && !cfShow[i]
+                    ? 'password'
+                    : ftype === 'date'
+                      ? 'date'
+                      : 'text'
+                }
+                className={['password', 'pin', 'numeric'].includes(ftype) ? 'mono' : undefined}
+                inputMode={['pin', 'numeric', 'phone'].includes(ftype) ? 'numeric' : undefined}
+                placeholder={t.fieldValue}
+                value={f.value}
+                onChange={(e) => patchField({ value: e.target.value })}
+              />
+            );
+          return (
+            <div
+              className={
+                'cf-row' +
+                (ftype === 'section' ? ' cf-section-row' : '') +
+                (dragIdx === i ? ' dragging' : '') +
+                (overIdx === i && dragIdx !== null && dragIdx !== i ? ' dragover' : '')
+              }
+              key={i}
+              draggable={dragArmed === i}
+              onDragStart={(e) => {
+                setDragIdx(i);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragOver={(e) => {
+                if (dragIdx === null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setOverIdx(i);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIdx !== null && dragIdx !== i) {
+                  const cf = [...draft.custom_fields];
+                  const [moved] = cf.splice(dragIdx, 1);
+                  cf.splice(i, 0, moved);
+                  setCfShow({});
+                  set({ custom_fields: cf });
+                }
+                setDragIdx(null);
+                setOverIdx(null);
+                setDragArmed(null);
+              }}
+              onDragEnd={() => {
+                setDragIdx(null);
+                setOverIdx(null);
+                setDragArmed(null);
+              }}
             >
-              ×
-            </button>
-          </div>
-        ))}
-        <button
-          className="ghost"
-          onClick={() =>
-            set({
-              custom_fields: [
-                ...draft.custom_fields,
-                { name: '', value: '', protected: false } as CustomField,
-              ],
-            })
-          }
-        >
-          + {t.addField}
-        </button>
+              <span
+                className="cf-handle"
+                title={t.dragToReorder}
+                onMouseDown={() => setDragArmed(i)}
+                onMouseUp={() => setDragArmed(null)}
+              >
+                ≡
+              </span>
+              <input
+                type="text"
+                className={ftype === 'section' ? 'cf-section-name' : 'cf-name'}
+                placeholder={ftype === 'section' ? t.fieldTypes.section : t.fieldName}
+                value={f.name}
+                onChange={(e) => patchField({ name: e.target.value })}
+              />
+              {ftype !== 'section' && valueInput}
+              {ftype !== 'section' && f.protected && (
+                <button
+                  type="button"
+                  className="icon noflex"
+                  onClick={() => setCfShow({ ...cfShow, [i]: !cfShow[i] })}
+                >
+                  {cfShow[i] ? t.hide : t.reveal}
+                </button>
+              )}
+              <button
+                type="button"
+                className="icon noflex"
+                title={t.fieldOptions}
+                onClick={() => setCfOptions(i)}
+              >
+                ⚙︎
+              </button>
+              <button type="button" className="ghost icon noflex" onClick={removeField}>
+                ×
+              </button>
+            </div>
+          );
+        })}
+        <div className="row" style={{ maxWidth: 420 }}>
+          <button
+            className="ghost"
+            onClick={() => {
+              set({
+                custom_fields: [
+                  ...draft.custom_fields,
+                  { name: '', value: '', protected: false, field_type: 'text' },
+                ],
+              });
+              setCfOptions(draft.custom_fields.length);
+            }}
+          >
+            + {t.addField}
+          </button>
+          <button
+            className="ghost"
+            onClick={() =>
+              set({
+                custom_fields: [
+                  ...draft.custom_fields,
+                  { name: '', value: '', protected: false, field_type: 'section' },
+                ],
+              })
+            }
+          >
+            + {t.addSection}
+          </button>
+        </div>
 
         <label className="field" style={{ marginTop: 14 }}>
           <span>{t.notes}</span>
@@ -396,6 +495,23 @@ export default function EntryDetail(props: Props) {
               set({ password: pw });
               setGenFor(false);
             }}
+          />
+        )}
+
+        {cfOptions !== null && draft.custom_fields[cfOptions] && (
+          <FieldOptionsModal
+            field={draft.custom_fields[cfOptions]}
+            onChange={(patch) => {
+              const cf = [...draft.custom_fields];
+              cf[cfOptions] = { ...cf[cfOptions], ...patch };
+              set({ custom_fields: cf });
+            }}
+            onDelete={() => {
+              set({ custom_fields: draft.custom_fields.filter((_, x) => x !== cfOptions) });
+              setCfShow({});
+              setCfOptions(null);
+            }}
+            onClose={() => setCfOptions(null)}
           />
         )}
       </div>
@@ -558,15 +674,132 @@ export default function EntryDetail(props: Props) {
   );
 }
 
+function FieldOptionsModal({
+  field,
+  onChange,
+  onDelete,
+  onClose,
+}: {
+  field: CustomField;
+  onChange: (patch: Partial<CustomField>) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useApp();
+  const ftype = normalizeFieldType(field.field_type);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
+        <div className="mhead">
+          <h3>{t.fieldOptions}</h3>
+        </div>
+        <div className="mbody">
+          <label className="field">
+            <span>{t.fieldName}</span>
+            <input
+              type="text"
+              autoFocus
+              value={field.name}
+              onChange={(e) => onChange({ name: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>{t.fieldTypeLabel}</span>
+            <select
+              value={ftype}
+              onChange={(e) => {
+                const next = e.target.value;
+                // password/pin are sensitive by nature — pre-set the mask
+                onChange({
+                  field_type: next,
+                  protected:
+                    next === 'password' || next === 'pin'
+                      ? true
+                      : next === 'section'
+                        ? false
+                        : field.protected,
+                });
+              }}
+            >
+              {FIELD_TYPES.map((ft) => (
+                <option key={ft} value={ft}>
+                  {t.fieldTypes[ft]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {ftype !== 'section' && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={field.protected}
+                onChange={(e) => onChange({ protected: e.target.checked })}
+              />
+              {t.sensitiveField}
+            </label>
+          )}
+        </div>
+        <div className="mfoot">
+          <button className="danger" onClick={onDelete}>
+            {t.deleteField}
+          </button>
+          <button className="primary" onClick={onClose}>
+            {t.close}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomFieldView({ field, onCopy }: { field: CustomField; onCopy: () => void }) {
   const { t } = useApp();
   const [show, setShow] = useState(false);
+  const ftype = normalizeFieldType(field.field_type);
+  if (ftype === 'section') {
+    if (!field.name) return null;
+    return <div className="fieldlabel cf-section-view">{field.name}</div>;
+  }
   if (!field.value) return null;
+
+  const openUrl = async (url: string) => {
+    const { openUrl: doOpen } = await import('@tauri-apps/plugin-opener');
+    const full = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    await doOpen(full);
+  };
+  const masked = field.protected && !show;
+  const display =
+    ftype === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(field.value)
+      ? new Date(`${field.value}T00:00:00`).toLocaleDateString()
+      : field.value;
+
   return (
     <div className="kv">
       <div className="fieldlabel">{field.name}</div>
       <div className="val">
-        <span className="text">{field.protected && !show ? '••••••••' : field.value}</span>
+        {ftype === 'multiline' && !masked ? (
+          <div className="notes-box" style={{ flex: 1 }}>
+            {field.value}
+          </div>
+        ) : (
+          <span className={'text' + (['password', 'pin', 'numeric'].includes(ftype) ? ' mono' : '')}>
+            {masked ? (
+              '••••••••'
+            ) : ftype === 'url' ? (
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openUrl(field.value);
+                }}
+              >
+                {field.value}
+              </a>
+            ) : (
+              display
+            )}
+          </span>
+        )}
         {field.protected && (
           <button className="icon" onClick={() => setShow(!show)}>
             {show ? t.hide : t.reveal}

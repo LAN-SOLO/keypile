@@ -58,7 +58,7 @@ button.ghost { background: transparent; border-color: transparent; color: var(--
 button.ghost:hover { color: var(--text); background: var(--bg-raised); }
 button.icon { padding: 4px 8px; line-height: 1; }
 
-input[type='text'], input[type='password'], input[type='number'], textarea, select {
+input[type='text'], input[type='password'], input[type='number'], input[type='date'], textarea, select {
   font: inherit;
   width: 100%;
   color: var(--text);
@@ -118,6 +118,53 @@ label.check input { accent-color: var(--blue-dim); }
 }
 .recent-item .path { font-size: 11px; color: var(--text-faint); font-family: var(--mono); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row { display: flex; gap: 8px; align-items: center; }
+
+/* ---------- custom fields (edit mode) ---------- */
+.cf-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  padding: 2px 0;
+  border-radius: 6px;
+}
+.cf-row > button { flex: 0 0 auto; margin-top: 3px; }
+.cf-row .cf-name { flex: 0 1 180px; }
+.cf-row textarea { flex: 1; min-height: 54px; }
+.cf-row.dragging { opacity: 0.4; }
+.cf-row.dragover { box-shadow: 0 -2px 0 0 var(--blue); }
+.cf-handle {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  color: var(--text-faint);
+  cursor: grab;
+  padding: 7px 2px 0;
+  font-size: 14px;
+  line-height: 1;
+}
+.cf-handle:hover { color: var(--text); }
+.cf-row.cf-section-row {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  margin-top: 14px;
+}
+.cf-row.cf-section-row .cf-section-name {
+  flex: 1;
+  background: transparent;
+  border-color: transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cf-row.cf-section-row .cf-section-name:focus { border-color: var(--blue-dim); }
+.cf-section-view {
+  margin: 20px 0 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
 .row > * { flex: 1; }
 .row > .noflex { flex: 0 0 auto; }
 .spacer { flex: 1; }
