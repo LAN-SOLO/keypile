@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, EntrySummary, Folder } from '../api';
+import { MOD } from '../keys';
 import { useApp } from '../App';
 import EntryDetail from './EntryDetail';
 import GeneratorModal from './GeneratorModal';
@@ -134,17 +135,126 @@ export default function MainView() {
     }
   };
 
-  // ⌘L / Ctrl+L locks the vault
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const copySelected = useCallback(
+    async (field: 'username' | 'password' | 'totp') => {
+      if (!selectedId) return;
+      try {
+        await api.copyEntryField(selectedId, field);
+        toast(t.copied);
+      } catch (err) {
+        toast(String(err), true);
+      }
+    },
+    [selectedId, toast, t]
+  );
+
+  // Global shortcuts — ⌘/Ctrl: L lock · C password · B username · T one-time
+  // code · U open URL · E edit · N new · F search · G generator · , settings;
+  // ↑/↓ walk the entry list. Copy/edit follow KeePassXC/Enpass conventions.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === 'l') {
         e.preventDefault();
         lock();
+        return;
+      }
+      // while a modal or the edit form is open, leave the keyboard alone
+      if (showTemplates || showGenerator || showSettings || editing) return;
+      const target = e.target as HTMLElement;
+      const inField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target.isContentEditable;
+
+      if (mod && key === 'f') {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        return;
+      }
+      if (mod && key === 'n') {
+        e.preventDefault();
+        setShowTemplates(true);
+        return;
+      }
+      if (mod && key === 'g') {
+        e.preventDefault();
+        setShowGenerator(true);
+        return;
+      }
+      if (mod && e.key === ',') {
+        e.preventDefault();
+        setShowSettings(true);
+        return;
+      }
+
+      if (
+        (e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+        !mod &&
+        (!inField || target === searchRef.current) &&
+        filter.kind !== 'audit' &&
+        visible.length > 0
+      ) {
+        e.preventDefault();
+        const idx = visible.findIndex((x) => x.id === selectedId);
+        const next =
+          e.key === 'ArrowDown'
+            ? Math.min(idx + 1, visible.length - 1)
+            : Math.max(idx - 1, 0);
+        select(visible[next].id);
+        return;
+      }
+
+      if (!selectedId || !mod) return;
+      const sel = entries.find((x) => x.id === selectedId);
+      if (key === 'c') {
+        // don't hijack a real text copy (focused field or selected text)
+        if (inField || (window.getSelection()?.toString() ?? '') !== '') return;
+        e.preventDefault();
+        copySelected('password');
+      } else if (key === 'b' && sel?.username) {
+        e.preventDefault();
+        copySelected('username');
+      } else if (key === 't' && sel?.has_totp) {
+        e.preventDefault();
+        copySelected('totp');
+      } else if (key === 'u' && sel?.url) {
+        e.preventDefault();
+        import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
+          const u = sel.url!;
+          openUrl(/^https?:\/\//i.test(u) ? u : `https://${u}`);
+        });
+      } else if (key === 'e' && filter.kind !== 'trash' && !sel?.deleted) {
+        e.preventDefault();
+        setEditing(true);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [lock]);
+  }, [
+    lock,
+    showTemplates,
+    showGenerator,
+    showSettings,
+    editing,
+    filter,
+    visible,
+    entries,
+    selectedId,
+    copySelected,
+  ]);
+
+  // keep the keyboard-selected entry in view
+  useEffect(() => {
+    document
+      .querySelector('.entry-item.active')
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [selectedId]);
 
   const removeFolder = async (id: string) => {
     try {
@@ -238,14 +348,14 @@ export default function MainView() {
               <UpdateIcon /> {t.updateAvailable(update.version)}
             </button>
           )}
-          <button className="side-item" onClick={() => setShowGenerator(true)}>
+          <button className="side-item" title={`${MOD}G`} onClick={() => setShowGenerator(true)}>
             <DiceIcon /> {t.generator}
           </button>
-          <button className="side-item" onClick={() => setShowSettings(true)}>
+          <button className="side-item" title={`${MOD},`} onClick={() => setShowSettings(true)}>
             <GearIcon /> {t.settings}
           </button>
           <button className="side-item" onClick={lock}>
-            <LockIcon /> {t.lock} ⌘L
+            <LockIcon /> {t.lock} {MOD}L
           </button>
         </div>
       </nav>
@@ -264,13 +374,14 @@ export default function MainView() {
             <div className="searchbar">
               <input
                 type="text"
-                placeholder={t.search}
+                ref={searchRef}
+                placeholder={`${t.search} (${MOD}F)`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <button
                 className="primary noflex"
-                title={t.newEntry}
+                title={`${t.newEntry} (${MOD}N)`}
                 onClick={() => setShowTemplates(true)}
               >
                 +

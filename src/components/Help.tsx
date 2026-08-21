@@ -67,6 +67,7 @@ const de: Content = {
         '„Neuer Eintrag“ öffnet die Vorlagen-Auswahl: Login, Karte, Notiz und mehr — jede Vorlage bringt die passenden Felder mit.',
         'Eigene Felder lassen sich jederzeit ergänzen — mit Typ (Text, Passwort, PIN, Datum, URL …), per Drag & Drop anordenbar und in Abschnitte gruppierbar; sensible Felder werden verdeckt dargestellt.',
         'Ordnung halten: Ordner in der Seitenleiste, Favoriten, Tags und die Suche oben.',
+        'Schnell kopieren per Tastatur: ⌘C Passwort, ⌘B Benutzername, ⌘T Einmalcode — alle Kürzel stehen im Handbuch.',
       ],
     },
     {
@@ -206,6 +207,23 @@ const de: Content = {
       ],
     },
     {
+      id: 'shortcuts',
+      title: 'Tastaturkürzel',
+      body: [
+        'Mit ausgewähltem Eintrag (⌘ am Mac, Strg unter Windows/Linux):',
+        '• ⌘C — Passwort kopieren (greift nur, wenn kein Text markiert ist)',
+        '• ⌘B — Benutzernamen kopieren',
+        '• ⌘T — Einmalcode (TOTP) kopieren',
+        '• ⌘U — hinterlegte URL im Browser öffnen',
+        '• ⌘E — Eintrag bearbeiten',
+        'Allgemein:',
+        '• ↑ / ↓ — durch die Eintragsliste gehen (auch aus dem Suchfeld heraus)',
+        '• ⌘F — Suche fokussieren · ⌘N — neuer Eintrag · ⌘G — Generator',
+        '• ⌘, — Einstellungen · ⌘L — Tresor sperren',
+        'Kopierte Geheimnisse verschwinden wie gewohnt nach der eingestellten Zeit aus der Zwischenablage.',
+      ],
+    },
+    {
       id: 'updates',
       title: 'Updates',
       body: [
@@ -261,6 +279,7 @@ const en: Content = {
         '“New entry” opens the template picker: login, card, note and more — each template brings the right fields.',
         'Custom fields can be added anytime — typed (text, password, PIN, date, URL …), reorderable via drag & drop and groupable into sections; sensitive fields are masked.',
         'Stay organized: folders in the sidebar, favorites, tags and the search on top.',
+        'Copy fast from the keyboard: ⌘C password, ⌘B username, ⌘T one-time code — the full list is in the manual.',
       ],
     },
     {
@@ -397,6 +416,23 @@ const en: Content = {
         '• Manual lock — anytime via the lock button',
         'Cryptography: Argon2id for key derivation, AES-256-GCM for the data. Format and procedures are documented (FORMAT.md in the repo).',
         'Alpha note: the crypto is documented but not externally audited yet — please wait for the beta before trusting it with production passwords.',
+      ],
+    },
+    {
+      id: 'shortcuts',
+      title: 'Keyboard shortcuts',
+      body: [
+        'With an entry selected (⌘ on Mac, Ctrl on Windows/Linux):',
+        '• ⌘C — copy password (only when no text is selected)',
+        '• ⌘B — copy username',
+        '• ⌘T — copy one-time code (TOTP)',
+        '• ⌘U — open the stored URL in your browser',
+        '• ⌘E — edit the entry',
+        'General:',
+        '• ↑ / ↓ — walk the entry list (works from the search box too)',
+        '• ⌘F — focus search · ⌘N — new entry · ⌘G — generator',
+        '• ⌘, — settings · ⌘L — lock the vault',
+        'Copied secrets clear from the clipboard after the configured time, as usual.',
       ],
     },
     {

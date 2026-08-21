@@ -6,6 +6,7 @@ import GeneratorModal from './GeneratorModal';
 import UnlockedBadge from './UnlockedBadge';
 import { confirmDialog } from './MainView';
 import { Category, TEMPLATES, normalizeCategory, parseTemplateField } from '../templates';
+import { MOD } from '../keys';
 import { ArchiveIcon, CategoryIcon, PaperclipIcon } from '../icons';
 
 interface Props {
@@ -534,7 +535,9 @@ export default function EntryDetail(props: Props) {
         </h2>
         {!props.inTrash ? (
           <>
-            <button onClick={() => props.setEditing(true)}>{t.edit}</button>
+            <button title={`${MOD}E`} onClick={() => props.setEditing(true)}>
+              {t.edit}
+            </button>
             <button title={entry.archived ? t.unarchive : t.archive} onClick={toggleArchive}>
               <ArchiveIcon size={14} />
             </button>
@@ -557,7 +560,7 @@ export default function EntryDetail(props: Props) {
           <div className="fieldlabel">{t.username}</div>
           <div className="val">
             <span className="text">{entry.username}</span>
-            <button className="icon" onClick={() => copyField('username')}>
+            <button className="icon" title={`${MOD}B`} onClick={() => copyField('username')}>
               {t.copy}
             </button>
           </div>
@@ -572,7 +575,7 @@ export default function EntryDetail(props: Props) {
             <button className="icon" onClick={() => setRevealed(!revealed)}>
               {revealed ? t.hide : t.reveal}
             </button>
-            <button className="icon" onClick={() => copyField('password')}>
+            <button className="icon" title={`${MOD}C`} onClick={() => copyField('password')}>
               {t.copy}
             </button>
           </div>
@@ -844,7 +847,7 @@ function TotpBlock({ entryId, onCopy }: { entryId: string; onCopy: () => void })
       <div className="val">
         <span className="text totp-code">{pretty}</span>
         <span className="totp-ring">{code.remaining}s</span>
-        <button className="icon" onClick={onCopy}>
+        <button className="icon" title={`${MOD}T`} onClick={onCopy}>
           {t.copy}
         </button>
       </div>
