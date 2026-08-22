@@ -157,9 +157,15 @@ mod tests {
 
     #[test]
     fn passphrase_word_count() {
-        let opts = PassphraseOptions::default();
+        // separator " " instead of the default "-": a handful of wordlist
+        // entries (drop-down, felt-tip, t-shirt, yo-yo) contain a hyphen
+        // themselves, which made a '-'-split flaky.
+        let opts = PassphraseOptions {
+            separator: " ".into(),
+            ..Default::default()
+        };
         let pp = generate_passphrase(&opts);
-        assert_eq!(pp.split('-').count(), 5);
+        assert_eq!(pp.split(' ').count(), 5);
     }
 
     #[test]
