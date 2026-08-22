@@ -179,9 +179,18 @@ label.check input { accent-color: var(--blue-dim); }
   display: flex;
   flex-direction: column;
   padding: 12px 8px;
+  min-height: 0;
+}
+.sidebar .brand { font-size: 18px; padding: 4px 10px 14px; flex-shrink: 0; }
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
   gap: 2px;
 }
-.sidebar .brand { font-size: 18px; padding: 4px 10px 14px; }
 .side-item {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px;
@@ -197,7 +206,30 @@ label.check input { accent-color: var(--blue-dim); }
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-faint); padding: 14px 10px 4px; font-family: var(--mono);
 }
-.sidebar .bottom { margin-top: auto; display: flex; flex-direction: column; gap: 2px; }
+.sidebar .bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.tree-chevron, .tree-chevron-spacer {
+  width: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tree-chevron {
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+.tree-chevron.expanded { transform: rotate(90deg); }
+.tree-chevron:hover { color: var(--text); }
 
 .listpane {
   width: 300px;

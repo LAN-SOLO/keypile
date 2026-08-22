@@ -11,6 +11,7 @@ import { Category } from '../templates';
 import {
   ArchiveIcon,
   CategoryIcon,
+  ChevronRightIcon,
   DiceIcon,
   FolderIcon,
   GearIcon,
@@ -24,6 +25,43 @@ import {
   TrashIcon,
   UpdateIcon,
 } from '../icons';
+
+interface FolderNode {
+  path: string;
+  segment: string;
+  folder: Folder | null;
+  children: FolderNode[];
+}
+
+function buildFolderTree(folders: Folder[]): FolderNode {
+  const root: FolderNode = { path: '', segment: '', folder: null, children: [] };
+  const byPath = new Map<string, FolderNode>([['', root]]);
+  for (const f of folders) {
+    const segments = f.name.split('/').filter(Boolean);
+    let path = '';
+    let parent = root;
+    for (const segment of segments) {
+      path = path ? `${path}/${segment}` : segment;
+      let node = byPath.get(path);
+      if (!node) {
+        node = { path, segment, folder: null, children: [] };
+        byPath.set(path, node);
+        parent.children.push(node);
+      }
+      parent = node;
+    }
+    parent.folder = f;
+  }
+  return root;
+}
+
+// auto-expand the chain of single-child folders plus the node where it first branches
+function defaultExpanded(node: FolderNode, set: Set<string>) {
+  for (const child of node.children) {
+    set.add(child.path);
+    if (child.children.length === 1) defaultExpanded(child, set);
+  }
+}
 
 export type Filter =
   | { kind: 'all' }
@@ -48,6 +86,8 @@ export default function MainView() {
   const [showGenerator, setShowGenerator] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const foldersInitialized = useRef(false);
 
   const reload = useCallback(async () => {
     const [es, fs] = await Promise.all([api.listEntries(), api.listFolders()]);
@@ -59,6 +99,25 @@ export default function MainView() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
+
+  useEffect(() => {
+    if (foldersInitialized.current || folders.length === 0) return;
+    foldersInitialized.current = true;
+    const initial = new Set<string>();
+    defaultExpanded(folderTree, initial);
+    setExpandedFolders(initial);
+  }, [folders, folderTree]);
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
 
   const visible = useMemo(() => {
     let list = entries;
@@ -105,6 +164,13 @@ export default function MainView() {
   const usedCategories = useMemo(() => {
     const counts = new Map<string, number>();
     for (const e of active) counts.set(e.category, (counts.get(e.category) ?? 0) + 1);
+    return counts;
+  }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of active) {
+      if (e.folder) counts.set(e.folder, (counts.get(e.folder) ?? 0) + 1);
+    }
     return counts;
   }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -278,6 +344,53 @@ export default function MainView() {
     </button>
   );
 
+  const renderFolderNode = (node: FolderNode, depth: number): JSX.Element => {
+    const hasChildren = node.children.length > 0;
+    const expanded = expandedFolders.has(node.path);
+    const active = !!node.folder && isActive({ kind: 'folder', id: node.folder.id });
+    const count = node.folder ? folderCounts.get(node.folder.id) ?? 0 : 0;
+    return (
+      <div key={node.path}>
+        <div className="row" style={{ gap: 0 }}>
+          <button
+            className={`side-item${active ? ' active' : ''}`}
+            style={{ paddingLeft: 10 + depth * 16 }}
+            onClick={() => {
+              if (hasChildren) toggleFolder(node.path);
+              if (node.folder) setFilter({ kind: 'folder', id: node.folder.id });
+            }}
+          >
+            {hasChildren ? (
+              <span
+                className={`tree-chevron${expanded ? ' expanded' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFolder(node.path);
+                }}
+              >
+                <ChevronRightIcon size={12} />
+              </span>
+            ) : (
+              <span className="tree-chevron-spacer" />
+            )}
+            <FolderIcon /> {node.segment}
+            {count > 0 && <span className="count">{count}</span>}
+          </button>
+          {node.folder && (
+            <button
+              className="ghost icon noflex"
+              title={t.delete}
+              onClick={() => removeFolder(node.folder!.id)}
+            >
+              ×
+            </button>
+          )}
+        </div>
+        {hasChildren && expanded && node.children.map((c) => renderFolderNode(c, depth + 1))}
+      </div>
+    );
+  };
+
   return (
     <div className="main">
       <nav className="sidebar">
@@ -285,6 +398,7 @@ export default function MainView() {
           <span className="name">keypile</span>
           <span className="dot">.</span>
         </div>
+        <div className="sidebar-scroll">
         {item({ kind: 'all' }, <KeyIcon />, t.allEntries, active.length)}
         {item({ kind: 'fav' }, <StarIcon />, t.favorites)}
         {item({ kind: 'audit' }, <ShieldIcon />, t.audit)}
@@ -307,19 +421,7 @@ export default function MainView() {
         {item({ kind: 'trash' }, <TrashIcon />, t.trash, trashCount)}
 
         <div className="side-section">{t.folders}</div>
-        {folders.map((f) => (
-          <div key={f.id} className="row" style={{ gap: 0 }}>
-            <button
-              className={`side-item${isActive({ kind: 'folder', id: f.id }) ? ' active' : ''}`}
-              onClick={() => setFilter({ kind: 'folder', id: f.id })}
-            >
-              <FolderIcon /> {f.name}
-            </button>
-            <button className="ghost icon noflex" title={t.delete} onClick={() => removeFolder(f.id)}>
-              ×
-            </button>
-          </div>
-        ))}
+        {folderTree.children.map((n) => renderFolderNode(n, 0))}
         {folderDraft === null ? (
           <button
             className="side-item"
@@ -341,6 +443,7 @@ export default function MainView() {
             }}
           />
         )}
+        </div>
 
         <div className="bottom">
           {update && (

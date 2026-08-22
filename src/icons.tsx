@@ -206,6 +206,12 @@ export const FolderIcon = ({ size }: { size?: number }) => (
   </I>
 );
 
+export const ChevronRightIcon = ({ size }: { size?: number }) => (
+  <I size={size}>
+    <path d="M9 5l7 7-7 7" />
+  </I>
+);
+
 /** Category → icon component. */
 export function CategoryIcon({ category, size }: { category: string; size?: number }) {
   switch (category) {
