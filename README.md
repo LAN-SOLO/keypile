@@ -67,7 +67,7 @@ ein Draft-Release.
 - `src-tauri/` — Desktop-App-Schicht: Sitzung/Schlüssel-Handling (zeroized),
   atomares Speichern mit externem Change-Merge, HIBP-Abfrage, Zwischenablage,
   Einstellungen.
-- `src/` — React-UI (Vite, TypeScript), dunkles LAN-SOLO-Theme, DE/EN.
+- `src/` — React-UI (Vite, TypeScript), LAN-SOLO-Theme (dunkel/hell umschaltbar), DE/EN.
 
 ## Verwandte Repositories
 

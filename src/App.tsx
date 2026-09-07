@@ -69,6 +69,19 @@ export default function App() {
     [settings]
   );
 
+  // Darstellung aus den Einstellungen auf <html> spiegeln; localStorage dient
+  // nur als Cache für main.tsx, damit der erste Frame schon richtig aussieht.
+  useEffect(() => {
+    if (!settings) return;
+    const theme = settings.theme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem('theme', theme);
+    } catch {
+      /* ignore */
+    }
+  }, [settings]);
+
   // auto-lock on inactivity
   useEffect(() => {
     if (!settings || !status || status.locked) return;

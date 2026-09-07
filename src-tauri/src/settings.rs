@@ -21,6 +21,14 @@ pub struct Settings {
     /// Random id identifying this installation in version vectors (not secret,
     /// never leaves the vault file).
     pub device_id: String,
+    /// Darstellung: "dark" | "light" (Default dunkel — bestehende
+    /// settings.json ohne das Feld laden weiterhin).
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String {
+    "dark".into()
 }
 
 impl Default for Settings {
@@ -32,6 +40,7 @@ impl Default for Settings {
             lock_on_blur: false,
             recent_vaults: Vec::new(),
             device_id: format!("kp-{}", uuid::Uuid::new_v4().simple()),
+            theme: default_theme(),
         }
     }
 }

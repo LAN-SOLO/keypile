@@ -12,8 +12,43 @@
   --green: #34d399;
   --yellow: #fbbf24;
   --red: #f87171;
+  /* Text auf Primär-Buttons, Danger-Rahmen, Overlays, Schatten, Trennlinien */
+  --on-accent: #04121f;
+  --red-border: #5c2b2b;
+  --overlay: rgba(4, 8, 16, 0.7);
+  --overlay-strong: rgba(4, 8, 16, 0.72);
+  --shadow: rgba(0, 0, 0, 0.5);
+  --shadow-soft: rgba(0, 0, 0, 0.45);
+  --list-sep: #16223822;
+  --blue-border: rgba(56, 189, 248, 0.35);
   --mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Darstellung: data-theme wird von main.tsx (Cache) und App.tsx (Einstellung)
+   auf <html> gesetzt. Dark bleibt der Default und optisch unverändert. */
+html[data-theme='light'] {
+  --bg: #eef2f8;
+  --bg-panel: #ffffff;
+  --bg-raised: #e4eaf3;
+  --bg-hover: #d8e2ef;
+  --border: #c3cfe0;
+  --text: #16233a;
+  --text-dim: #46586f;
+  --text-faint: #7a8ca3;
+  --blue: #0284c7;
+  --blue-dim: #0369a1;
+  --green: #047857;
+  --yellow: #b45309;
+  --red: #dc2626;
+  --on-accent: #ffffff;
+  --red-border: #f0b4b4;
+  --overlay: rgba(22, 35, 58, 0.45);
+  --overlay-strong: rgba(22, 35, 58, 0.5);
+  --shadow: rgba(22, 35, 58, 0.22);
+  --shadow-soft: rgba(22, 35, 58, 0.18);
+  --list-sep: #c3cfe066;
+  --blue-border: rgba(2, 132, 199, 0.4);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,11 +84,11 @@ button:disabled { opacity: 0.45; cursor: default; }
 button.primary {
   background: var(--blue-dim);
   border-color: var(--blue-dim);
-  color: #04121f;
+  color: var(--on-accent);
   font-weight: 600;
 }
 button.primary:hover { background: var(--blue); border-color: var(--blue); }
-button.danger { color: var(--red); border-color: #5c2b2b; }
+button.danger { color: var(--red); border-color: var(--red-border); }
 button.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
 button.ghost:hover { color: var(--text); background: var(--bg-raised); }
 button.icon { padding: 4px 8px; line-height: 1; }
@@ -243,7 +278,7 @@ label.check input { accent-color: var(--blue-dim); }
 .entry-list { overflow-y: auto; flex: 1; }
 .entry-item {
   padding: 10px 14px;
-  border-bottom: 1px solid #16223822;
+  border-bottom: 1px solid var(--list-sep);
   cursor: pointer;
   display: flex; flex-direction: column; gap: 2px;
 }
@@ -293,7 +328,7 @@ label.check input { accent-color: var(--blue-dim); }
 /* ---------- modal ---------- */
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(4, 8, 16, 0.7);
+  background: var(--overlay);
   display: flex; align-items: center; justify-content: center;
   z-index: 10;
 }
@@ -413,7 +448,7 @@ label.check input { accent-color: var(--blue-dim); }
   text-transform: none;
   letter-spacing: 0;
   color: var(--blue);
-  border: 1px solid rgba(56, 189, 248, 0.35);
+  border: 1px solid var(--blue-border);
   border-radius: 20px;
   padding: 1px 7px;
   vertical-align: 1px;
@@ -481,9 +516,9 @@ label.check input { accent-color: var(--blue-dim); }
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
   background: var(--bg-raised); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px 18px; font-size: 13px; z-index: 50;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 24px var(--shadow);
 }
-.toast.err { border-color: #5c2b2b; color: var(--red); }
+.toast.err { border-color: var(--red-border); color: var(--red); }
 
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 5px; }
@@ -511,7 +546,7 @@ label.check input { accent-color: var(--blue-dim); }
 .hlp-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 16, 0.72);
+  background: var(--overlay-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -529,7 +564,7 @@ label.check input { accent-color: var(--blue-dim); }
   flex-direction: column;
   color: var(--text, #e2e8f0);
   overflow: hidden;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 18px 60px var(--shadow);
 }
 .hlp-head {
   display: flex;
@@ -598,7 +633,7 @@ label.check input { accent-color: var(--blue-dim); }
 .hlp-tut-nav .hlp-primary {
   background: var(--blue-dim, #0ea5e9);
   border-color: var(--blue-dim, #0ea5e9);
-  color: #04121f;
+  color: var(--on-accent, #04121f);
   font-weight: 600;
 }
 .hlp-tut-nav .hlp-primary:hover { background: var(--blue, #38bdf8); }
@@ -663,5 +698,5 @@ label.check input { accent-color: var(--blue-dim); }
   padding: 8px 14px;
   font-size: 13px;
   z-index: 50;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 30px var(--shadow-soft);
 }

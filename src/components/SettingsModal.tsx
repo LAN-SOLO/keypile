@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getVersion } from '@tauri-apps/api/app';
-import { api, UpdateInfo } from '../api';
+import { api, Settings, UpdateInfo } from '../api';
 import { useApp } from '../App';
 import { confirmDialog } from './MainView';
 import StrengthMeter from './StrengthMeter';
@@ -170,6 +170,16 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
               >
                 <option value="de">Deutsch</option>
                 <option value="en">English</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>{t.themeLabel}</span>
+              <select
+                value={settings.theme}
+                onChange={(e) => updateSettings({ theme: e.target.value as Settings['theme'] })}
+              >
+                <option value="dark">{t.themeDark}</option>
+                <option value="light">{t.themeLight}</option>
               </select>
             </label>
           </div>

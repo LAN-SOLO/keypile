@@ -208,6 +208,14 @@ const de: Content = {
       ],
     },
     {
+      id: 'appearance',
+      title: 'Oberfläche & Sprache',
+      body: [
+        '• Sprache — Deutsch oder Englisch, in den Einstellungen umschaltbar; das Handbuch folgt der Auswahl',
+        '• Modus — Dunkel (Standard) oder Hell; die Wahl gilt sofort für die gesamte App inklusive Entsperr-Bildschirm und wird gespeichert',
+      ],
+    },
+    {
       id: 'shortcuts',
       title: 'Tastaturkürzel',
       body: [
@@ -418,6 +426,14 @@ const en: Content = {
         '• Manual lock — anytime via the lock button',
         'Cryptography: Argon2id for key derivation, AES-256-GCM for the data. Format and procedures are documented (FORMAT.md in the repo).',
         'Alpha note: the crypto is documented but not externally audited yet — please wait for the beta before trusting it with production passwords.',
+      ],
+    },
+    {
+      id: 'appearance',
+      title: 'Interface & language',
+      body: [
+        '• Language — German or English, switchable in Settings; the handbook follows the selection',
+        '• Mode — Dark (default) or Light; the choice applies immediately to the whole app including the unlock screen and is saved',
       ],
     },
     {

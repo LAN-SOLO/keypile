@@ -9,6 +9,8 @@ export interface Settings {
   lock_on_blur: boolean;
   recent_vaults: string[];
   device_id: string;
+  /** Darstellung: dunkel (Default) oder hell */
+  theme: 'dark' | 'light';
 }
 
 export interface Status {
