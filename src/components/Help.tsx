@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // Selbstständiges Hilfe-System: schwebender ?-Button, First-Run-Tutorial
 // und durchsuchbares Handbuch. Sprache folgt der App-Einstellung.
@@ -476,7 +476,13 @@ const en: Content = {
 const SEEN_KEY = 'keypile.tutorialSeen';
 
 export default function Help({ lang }: { lang: string }) {
-  const c = lang === 'de' ? de : en;
+  // Sprache der Hilfe: folgt der App-Sprache, lässt sich aber im Kopf der
+  // Hilfe jederzeit zwischen DE und EN umschalten
+  const [helpLang, setHelpLang] = useState<'de' | 'en'>(lang === 'de' ? 'de' : 'en');
+  useEffect(() => {
+    setHelpLang(lang === 'de' ? 'de' : 'en');
+  }, [lang]);
+  const c = helpLang === 'de' ? de : en;
   const [mode, setMode] = useState<'closed' | 'tutorial' | 'manual'>(() =>
     localStorage.getItem(SEEN_KEY) ? 'closed' : 'tutorial'
   );
@@ -529,6 +535,14 @@ export default function Help({ lang }: { lang: string }) {
                 {c.labels.manual}
               </button>
               <span className="hlp-spacer" />
+              <span className="hlp-lang" role="group" aria-label="Sprache / Language">
+                <button className={`hlp-lang-btn ${helpLang === 'de' ? 'active' : ''}`} onClick={() => setHelpLang('de')}>
+                  DE
+                </button>
+                <button className={`hlp-lang-btn ${helpLang === 'en' ? 'active' : ''}`} onClick={() => setHelpLang('en')}>
+                  EN
+                </button>
+              </span>
               <button className="hlp-close" onClick={close}>
                 ✕
               </button>
