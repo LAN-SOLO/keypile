@@ -12,16 +12,20 @@ Produktseite: https://lan-solo.com/de/tools/keypile/ · Plan: `KEYPILE_PLAN.md`
 
 ## Status
 
-**Phase 1 — Desktop Free (Alpha).** Rust-Core (`core/`) mit vollständiger
+**Version 1.0 (Test-Build).** Funktions- und Sicherheits-Audit siehe
+[`AUDIT-1.0.md`](AUDIT-1.0.md). Rust-Core (`core/`) mit vollständiger
 Testabdeckung für Format, Krypto, Merge und TOTP; Tauri-Desktop-App
 (`src-tauri/` + `src/`) mit Tresor-UI, Generator, Passwort-Check und
 Import/Export. **Noch kein externer Audit — nicht für echte Passwörter
 verwenden**, siehe Disclaimer auf der Produktseite.
 
-### Features (implementiert, Stand v0.2)
+### Features (implementiert, Stand v1.0)
 
 - Verschlüsselter Datei-Tresor: Argon2id (64 MiB, t=3, p=4) + AES-256-GCM,
-  authentifizierter Header, optionale Schlüsseldatei als zweiter Faktor
+  authentifizierter Header, optionale Schlüsseldatei als zweiter Faktor;
+  KDF-Parameter aus fremden Dateien werden begrenzt (DoS-Schutz)
+- Eigene Felder mit Typen (Text, Passwort, PIN, Datum, URL …), Abschnitte,
+  Drag-&-Drop-Reihenfolge; Ordner mit Unterordnern („A/B“)
 - 10 Kategorien mit Vorlagen (Login, Kreditkarte, Identität, Notiz, Finanzen,
   Lizenz, Reise, Computer …), eigene Felder, Passwort-Historie, Favoriten,
   Archiv, Papierkorb
@@ -35,13 +39,15 @@ verwenden**, siehe Disclaimer auf der Produktseite.
 - Passwort-/Passphrasen-Generator (EFF-Wortliste, 7776 Wörter)
 - Passwort-Check: schwach (zxcvbn), wiederverwendet, alt, geleakt
   (Have-I-Been-Pwned per k-Anonymity — nur 5 Hash-Zeichen verlassen das Gerät)
-- Import: CSV (Chrome, KeePassXC, LastPass, Bitwarden, 1Password) und
-  Bitwarden-JSON; Export: CSV (mit Warnung)
+- Import: CSV (Chrome, KeePassXC, LastPass, Bitwarden, 1Password; UTF-8 mit
+  oder ohne BOM) und unverschlüsseltes Bitwarden-JSON; Export: CSV (mit Warnung)
 - Cloud-Sync über beliebige Sync-Ordner: externe Änderungen an der
   Tresor-Datei werden per Versionsvektor-Merge zusammengeführt — Konflikte
   landen als Kopien im Tresor, nie stiller Datenverlust
-- Auto-Lock, Sperren bei Fokusverlust, Zwischenablage-Auto-Clear,
-  Master-Passwort-Wechsel, DE/EN
+- Auto-Lock (auch nach Ruhezustand), Sperren bei Fokusverlust,
+  Zwischenablage-Auto-Clear (spätestens beim Sperren), Master-Passwort-Wechsel
+  inkl. Schlüsseldatei tauschen/entfernen, DE/EN, Hell/Dunkel,
+  Tastaturkürzel, In-App-Handbuch
 
 ## Entwicklung
 
@@ -50,14 +56,16 @@ Voraussetzungen: Rust (stable), Node 22, pnpm.
 ```sh
 pnpm install
 pnpm exec tauri dev      # Dev-App
-cargo test -p keypile-core   # Core-Tests (Format/Krypto/Merge/TOTP/Import)
+cargo test --workspace       # Core- + App-Tests (Format/Krypto/Merge/TOTP/Import/Speichern)
+pnpm build                   # Typecheck + Frontend-Build
 pnpm exec tauri build    # Release-Bundles (macOS: .app + .dmg)
 ```
 
 Windows (`.msi`/`.exe`) und Linux (`.deb`/`.rpm`/`.AppImage`) baut die CI:
 `.github/workflows/build.yml` läuft bei Tags (`v*`) und manuell
 (workflow_dispatch) und lädt die Bundles als Artefakte hoch; bei Tags entsteht
-ein Draft-Release.
+ein Release inkl. `latest.json` für den In-App-Updater (macOS signiert und
+notarisiert, sobald die Apple-Secrets gesetzt sind).
 
 ## Architektur
 
