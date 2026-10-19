@@ -19,6 +19,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::set_settings,
+            commands::forget_recent_vault,
             commands::create_vault,
             commands::open_vault,
             commands::lock_vault,

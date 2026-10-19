@@ -27,7 +27,12 @@ pub async fn check_passwords(passwords: &[String]) -> Result<HashMap<String, u64
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("keypile/0.1 (+https://lan-solo.com/tools/keypile)")
+        .user_agent(concat!(
+            "keypile/",
+            env!("CARGO_PKG_VERSION"),
+            " (+https://lan-solo.com/tools/keypile)"
+        ))
+        .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
 

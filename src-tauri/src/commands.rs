@@ -117,9 +117,34 @@ pub fn get_settings(app: tauri::AppHandle) -> Settings {
     settings::load(&app)
 }
 
+/// Store the user-editable settings. `recent_vaults` and `device_id` are
+/// owned by the backend: the UI holds a snapshot that goes stale as soon as a
+/// vault is opened, so writing it back would drop recent entries (or, worse,
+/// change the device id that version vectors rely on).
 #[tauri::command]
-pub fn set_settings(app: tauri::AppHandle, new_settings: Settings) {
-    settings::store(&app, &new_settings);
+pub fn set_settings(app: tauri::AppHandle, new_settings: Settings) -> Settings {
+    let current = settings::load(&app);
+    let mut next = new_settings;
+    next.recent_vaults = current.recent_vaults;
+    next.device_id = current.device_id;
+    next.auto_lock_minutes = next.auto_lock_minutes.min(24 * 60);
+    next.clipboard_clear_seconds = next.clipboard_clear_seconds.min(3600);
+    if next.language != "de" && next.language != "en" {
+        next.language = "en".into();
+    }
+    if next.theme != "dark" && next.theme != "light" {
+        next.theme = "dark".into();
+    }
+    settings::store(&app, &next);
+    next
+}
+
+#[tauri::command]
+pub fn forget_recent_vault(app: tauri::AppHandle, path: String) -> Settings {
+    let mut s = settings::load(&app);
+    s.recent_vaults.retain(|p| p != &path);
+    settings::store(&app, &s);
+    s
 }
 
 // ---------- vault lifecycle ----------
@@ -137,7 +162,14 @@ pub fn create_vault(
         password.zeroize();
         return Err("Das Master-Passwort muss mindestens 8 Zeichen haben".into());
     }
-    let keyfile = read_keyfile(&keyfile_path)?;
+    let keyfile = match read_keyfile(&keyfile_path) {
+        Ok(k) => k,
+        Err(e) => {
+            password.zeroize();
+            return Err(e);
+        }
+    };
+    let name = if name.trim().is_empty() { "keypile".to_string() } else { name.trim().to_string() };
     let vault = Vault::new(&name);
     let (bytes, unlocked) = format::create(
         &vault,
@@ -168,11 +200,23 @@ pub fn open_vault(
     mut password: String,
     keyfile_path: Option<String>,
 ) -> Result<StatusDto, String> {
-    let bytes =
-        std::fs::read(&path).map_err(|e| format!("Datei konnte nicht gelesen werden: {e}"))?;
-    let keyfile = read_keyfile(&keyfile_path)?;
-    let unlocked = format::open(&bytes, &password, keyfile.as_deref()).map_err(|e| e.to_string())?;
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            password.zeroize();
+            return Err(format!("Datei konnte nicht gelesen werden: {e}"));
+        }
+    };
+    let keyfile = match read_keyfile(&keyfile_path) {
+        Ok(k) => k,
+        Err(e) => {
+            password.zeroize();
+            return Err(e);
+        }
+    };
+    let opened = format::open(&bytes, &password, keyfile.as_deref());
     password.zeroize();
+    let unlocked = opened.map_err(|e| e.to_string())?;
     let session = Session {
         path: PathBuf::from(&path),
         unlocked,
@@ -185,11 +229,14 @@ pub fn open_vault(
 }
 
 #[tauri::command]
-pub fn lock_vault(st: State<'_, AppState>) {
-    // UnlockedVault's key is Zeroizing — dropping the session wipes it.
+pub fn lock_vault(app: tauri::AppHandle, st: State<'_, AppState>) {
+    // UnlockedVault's key is Zeroizing and Session::drop wipes the decrypted
+    // secrets — dropping the session is the lock.
     if let Ok(mut guard) = st.session.lock() {
         *guard = None;
     }
+    // a secret copied from this vault must not outlive the lock
+    clear_clipboard_if_ours(&app, &st);
 }
 
 #[tauri::command]
@@ -262,16 +309,21 @@ pub fn save_entry(
         let vault = &mut s.unlocked.vault;
         let entry = match input.id.and_then(|id| vault.entry_mut(id)) {
             Some(existing) => {
-                if existing.password != input.password && !existing.password.is_empty() {
-                    existing.history.insert(
-                        0,
-                        EntryHistory {
-                            password: existing.password.clone(),
-                            replaced: chrono::Utc::now(),
-                        },
-                    );
-                    existing.history.truncate(MAX_HISTORY);
-                    existing.password_changed = Some(chrono::Utc::now());
+                if existing.password != input.password {
+                    if !existing.password.is_empty() {
+                        existing.history.insert(
+                            0,
+                            EntryHistory {
+                                password: existing.password.clone(),
+                                replaced: chrono::Utc::now(),
+                            },
+                        );
+                        existing.history.truncate(MAX_HISTORY);
+                    }
+                    // also when a password is set for the first time — the
+                    // age audit would otherwise count from the creation date
+                    existing.password_changed =
+                        (!input.password.is_empty()).then(chrono::Utc::now);
                 }
                 if let Some(cat) = &input.category {
                     existing.category = normalize_category(cat);
@@ -616,23 +668,39 @@ pub fn totp_code(st: State<'_, AppState>, id: Uuid) -> Result<TotpDto, String> {
 
 // ---------- clipboard ----------
 
-fn copy_with_autoclear(app: tauri::AppHandle, text: String) -> Result<(), String> {
-    app.clipboard()
-        .write_text(text.clone())
-        .map_err(|e| e.to_string())?;
+fn copy_with_autoclear(app: tauri::AppHandle, mut text: String) -> Result<(), String> {
+    use tauri::Manager;
+    let hash = state::file_hash(text.as_bytes());
+    let written = app.clipboard().write_text(text.clone());
+    text.zeroize();
+    written.map_err(|e| e.to_string())?;
+    if let Ok(mut h) = app.state::<AppState>().clipboard_hash.lock() {
+        *h = Some(hash);
+    }
     let clear_after = settings::load(&app).clipboard_clear_seconds;
     if clear_after > 0 {
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(clear_after as u64)).await;
             // only clear if the clipboard still holds what we put there
             if let Ok(current) = app.clipboard().read_text() {
-                if current == text {
+                if state::file_hash(current.as_bytes()) == hash {
                     let _ = app.clipboard().write_text(String::new());
                 }
             }
         });
     }
     Ok(())
+}
+
+fn clear_clipboard_if_ours(app: &tauri::AppHandle, st: &State<'_, AppState>) {
+    let Some(hash) = st.clipboard_hash.lock().ok().and_then(|mut h| h.take()) else {
+        return;
+    };
+    if let Ok(current) = app.clipboard().read_text() {
+        if state::file_hash(current.as_bytes()) == hash {
+            let _ = app.clipboard().write_text(String::new());
+        }
+    }
 }
 
 /// Copy an arbitrary secret handed over from the UI (e.g. generator output).
@@ -749,7 +817,7 @@ pub async fn check_pwned(st: State<'_, AppState>) -> Result<Vec<PwnedDto>, Strin
             .vault
             .entries
             .iter()
-            .filter(|e| !e.deleted && !e.password.is_empty())
+            .filter(|e| !e.deleted && !e.archived && !e.password.is_empty())
             .map(|e| (e.id, e.password.clone()))
             .collect()
     };
@@ -782,8 +850,11 @@ pub fn import_file(
     path: String,
 ) -> Result<ImportDto, String> {
     let device_id = settings::load(&app).device_id;
-    let data = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Datei konnte nicht gelesen werden: {e}"))?;
+    let bytes =
+        std::fs::read(&path).map_err(|e| format!("Datei konnte nicht gelesen werden: {e}"))?;
+    let data = String::from_utf8(bytes).map_err(|_| {
+        "Die Datei ist nicht UTF-8-kodiert — bitte als UTF-8-CSV exportieren".to_string()
+    })?;
     let result = if path.to_lowercase().ends_with(".json") {
         import::import_bitwarden_json(&data, &device_id)
     } else {
@@ -849,12 +920,24 @@ pub fn change_master_password(
     current_keyfile_path: Option<String>,
     new_keyfile_path: Option<String>,
 ) -> Result<(), String> {
+    let wipe = |a: &mut String, b: &mut String| {
+        a.zeroize();
+        b.zeroize();
+    };
     if new_password.len() < 8 {
+        wipe(&mut current_password, &mut new_password);
         return Err("Das neue Master-Passwort muss mindestens 8 Zeichen haben".into());
     }
-    let current_keyfile = read_keyfile(&current_keyfile_path)?;
-    let new_keyfile = read_keyfile(&new_keyfile_path)?;
-    with_session(&st, |s| {
+    let keyfiles = read_keyfile(&current_keyfile_path)
+        .and_then(|c| read_keyfile(&new_keyfile_path).map(|n| (c, n)));
+    let (current_keyfile, new_keyfile) = match keyfiles {
+        Ok(k) => k,
+        Err(e) => {
+            wipe(&mut current_password, &mut new_password);
+            return Err(e);
+        }
+    };
+    let result = with_session(&st, |s| {
         // verify the current credentials against the live session key
         use base64::Engine;
         let salt = base64::engine::general_purpose::STANDARD
@@ -867,9 +950,7 @@ pub fn change_master_password(
             &s.unlocked.header.kdf,
         )
         .map_err(|e| e.to_string())?;
-        current_password.zeroize();
-        if check.as_slice() != s.unlocked.key.as_slice() {
-            new_password.zeroize();
+        if !keypile_core::crypto::ct_eq(check.as_slice(), s.unlocked.key.as_slice()) {
             return Err("Aktuelles Master-Passwort (oder Schlüsseldatei) ist falsch".into());
         }
         // fresh salt + new key
@@ -881,13 +962,15 @@ pub fn change_master_password(
             &s.unlocked.header.kdf,
         )
         .map_err(|e| e.to_string())?;
-        new_password.zeroize();
-        s.unlocked.key = new_key;
-        s.unlocked.header.salt = base64::engine::general_purpose::STANDARD.encode(&new_salt);
-        s.unlocked.header.keyfile = new_keyfile.is_some();
-        state::persist(s)?;
-        Ok(())
-    })
+        state::rekey(
+            s,
+            new_key,
+            base64::engine::general_purpose::STANDARD.encode(&new_salt),
+            new_keyfile.is_some(),
+        )
+    });
+    wipe(&mut current_password, &mut new_password);
+    result
 }
 
 // ---------- updater ----------

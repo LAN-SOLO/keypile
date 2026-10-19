@@ -16,9 +16,42 @@ pub struct Session {
     pub disk_hash: [u8; 32],
 }
 
+impl Drop for Session {
+    /// Best effort: overwrite the decrypted secrets before the memory is
+    /// freed (the key itself is `Zeroizing` already). Copies handed to the UI
+    /// are outside our control.
+    fn drop(&mut self) {
+        wipe_vault(&mut self.unlocked.vault);
+    }
+}
+
+pub fn wipe_vault(vault: &mut keypile_core::Vault) {
+    use zeroize::Zeroize;
+    for e in vault.entries.iter_mut() {
+        e.password.zeroize();
+        e.username.zeroize();
+        e.notes.zeroize();
+        if let Some(t) = e.totp.as_mut() {
+            t.zeroize();
+        }
+        for f in e.custom_fields.iter_mut() {
+            f.value.zeroize();
+        }
+        for h in e.history.iter_mut() {
+            h.password.zeroize();
+        }
+        for a in e.attachments.iter_mut() {
+            a.data.zeroize();
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct AppState {
     pub session: Mutex<Option<Session>>,
+    /// SHA-256 of the last secret keypile put on the clipboard — lets
+    /// lock/auto-clear wipe it without remembering the secret itself.
+    pub clipboard_hash: Mutex<Option<[u8; 32]>>,
 }
 
 pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
@@ -28,20 +61,61 @@ pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
 /// Atomic write: temp file in the same directory, then rename over the target.
 /// A `.bak` of the previous version is kept next to the vault.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let dir = path.parent().unwrap_or(Path::new("."));
+    use std::io::Write;
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
     let tmp = dir.join(format!(
         ".{}.tmp",
         path.file_name().and_then(|n| n.to_str()).unwrap_or("vault")
     ));
-    std::fs::write(&tmp, bytes)?;
-    if path.exists() {
-        let bak = path.with_extension("keypile.bak");
-        let _ = std::fs::copy(path, bak);
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        // make sure the bytes are on disk before the rename publishes them —
+        // otherwise a crash/power loss can leave an empty vault behind
+        f.sync_all()?;
     }
-    std::fs::rename(&tmp, path)?;
+    if path.exists() {
+        let _ = std::fs::copy(path, backup_path(path));
+    }
+    if let Err(e) = rename_with_retry(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
     Ok(())
 }
 
+pub fn backup_path(path: &Path) -> PathBuf {
+    path.with_extension("keypile.bak")
+}
+
+/// On Windows, sync clients (OneDrive, Dropbox) and virus scanners briefly
+/// hold the target open without FILE_SHARE_DELETE, so MoveFileEx fails with
+/// "access denied" for a few hundred milliseconds. Retry before giving up.
+fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    let attempts = if cfg!(windows) { 20 } else { 1 };
+    let mut last = None;
+    for i in 0..attempts {
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                let retryable = e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.raw_os_error() == Some(32) // ERROR_SHARING_VIOLATION
+                    || e.raw_os_error() == Some(5); // ERROR_ACCESS_DENIED
+                if !retryable || i + 1 == attempts {
+                    return Err(e);
+                }
+                last = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("rename failed")))
+}
+
+#[derive(Debug)]
 pub struct PersistOutcome {
     pub merged_external_changes: bool,
     pub conflicts: usize,
@@ -116,6 +190,37 @@ pub fn persist(session: &mut Session) -> Result<PersistOutcome, String> {
     Ok(outcome)
 }
 
+/// Re-encrypt the session under a new key/salt (master password change).
+/// External changes are merged under the OLD key first; if writing the
+/// re-keyed file fails, the session keeps the old key so memory and disk
+/// never disagree. Afterwards the `.bak` is refreshed so no copy readable
+/// with the old password stays next to the vault.
+pub fn rekey(
+    session: &mut Session,
+    new_key: zeroize::Zeroizing<[u8; keypile_core::crypto::KEY_LEN]>,
+    new_salt_b64: String,
+    uses_keyfile: bool,
+) -> Result<(), String> {
+    persist(session)?;
+    let old_key = std::mem::replace(&mut session.unlocked.key, new_key);
+    let old_header = session.unlocked.header.clone();
+    session.unlocked.header.salt = new_salt_b64;
+    session.unlocked.header.keyfile = uses_keyfile;
+    if let Err(e) = persist(session) {
+        session.unlocked.key = old_key;
+        session.unlocked.header = old_header;
+        return Err(e);
+    }
+    let bak = backup_path(&session.path);
+    if bak.exists() {
+        // best effort; a failure here must not undo the successful change
+        if std::fs::copy(&session.path, &bak).is_err() {
+            let _ = std::fs::remove_file(&bak);
+        }
+    }
+    Ok(())
+}
+
 fn conflict_path(path: &Path) -> PathBuf {
     let stem = path
         .file_stem()
@@ -139,12 +244,136 @@ mod tests {
         }
     }
 
+    fn tmpdir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "keypile-test-{tag}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn open_session(path: &Path, pw: &str) -> Session {
+        let bytes = std::fs::read(path).unwrap();
+        Session {
+            path: path.to_path_buf(),
+            unlocked: format::open(&bytes, pw, None).unwrap(),
+            disk_hash: file_hash(&bytes),
+        }
+    }
+
+    #[test]
+    fn rekey_merges_first_and_refreshes_backup() {
+        use base64::Engine;
+        let dir = tmpdir("rekey");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "old-password", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "old-password");
+        // first save creates a .bak
+        persist(&mut a).unwrap();
+
+        // another device adds an entry meanwhile (old key)
+        let mut b = open_session(&path, "old-password");
+        let mut eb = Entry::new("from-B");
+        eb.touch("B");
+        b.unlocked.vault.entries.push(eb);
+        persist(&mut b).unwrap();
+
+        let salt = keypile_core::crypto::random_bytes(keypile_core::crypto::SALT_LEN);
+        let key = keypile_core::crypto::derive_key("new-password", None, &salt, &fast_kdf()).unwrap();
+        rekey(&mut a, key, base64::engine::general_purpose::STANDARD.encode(&salt), false).unwrap();
+
+        let disk = std::fs::read(&path).unwrap();
+        assert!(format::open(&disk, "old-password", None).is_err());
+        let reopened = format::open(&disk, "new-password", None).unwrap();
+        assert!(reopened.vault.entries.iter().any(|e| e.title == "from-B"));
+        // the backup no longer opens with the old password
+        let bak = std::fs::read(backup_path(&path)).unwrap();
+        assert!(format::open(&bak, "old-password", None).is_err());
+        assert!(format::open(&bak, "new-password", None).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rekey_rolls_back_when_write_fails() {
+        use base64::Engine;
+        let dir = tmpdir("rekey-fail");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "old-password", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "old-password");
+        // point the session at a directory that does not exist → write fails
+        a.path = dir.join("missing").join("v.keypile");
+        let salt = keypile_core::crypto::random_bytes(keypile_core::crypto::SALT_LEN);
+        let old_salt = a.unlocked.header.salt.clone();
+        let key = keypile_core::crypto::derive_key("new-password", None, &salt, &fast_kdf()).unwrap();
+        assert!(rekey(&mut a, key, base64::engine::general_purpose::STANDARD.encode(&salt), false).is_err());
+        assert_eq!(a.unlocked.header.salt, old_salt);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn foreign_key_on_disk_writes_conflict_copy() {
+        let dir = tmpdir("conflict");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw-one", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw-one");
+        // file replaced by a vault with a different key
+        let (other, _) = format::create(&Vault::new("x"), "pw-two", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &other).unwrap();
+        let err = persist(&mut a).unwrap_err();
+        assert!(err.contains("Konflikt"));
+        assert!(dir.join("v (Konflikt).keypile").exists());
+        // the foreign file was not overwritten
+        assert_eq!(std::fs::read(&path).unwrap(), other);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn corrupt_disk_file_is_not_overwritten() {
+        let dir = tmpdir("corrupt");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw");
+        std::fs::write(&path, b"garbage").unwrap();
+        assert!(persist(&mut a).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"garbage");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn atomic_write_leaves_no_temp_file() {
+        let dir = tmpdir("atomic");
+        let path = dir.join("v.keypile");
+        atomic_write(&path, b"one").unwrap();
+        atomic_write(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        assert_eq!(std::fs::read(backup_path(&path)).unwrap(), b"one");
+        assert!(!dir.join(".v.keypile.tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn wipe_clears_secrets() {
+        let mut v = Vault::new("t");
+        let mut e = Entry::new("x");
+        e.password = "secret".into();
+        e.totp = Some("JBSWY3DPEHPK3PXP".into());
+        v.entries.push(e);
+        wipe_vault(&mut v);
+        assert!(v.entries[0].password.is_empty());
+        assert_eq!(v.entries[0].totp.as_deref(), Some(""));
+    }
+
     /// Simulates a cloud-sync race: device B writes a newer file to disk while
     /// device A has the vault open. A's save must merge, not overwrite.
     #[test]
     fn persist_merges_external_changes() {
-        let dir = std::env::temp_dir().join(format!("keypile-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = tmpdir("merge");
         let path = dir.join("v.keypile");
 
         // device A creates the vault
