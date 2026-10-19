@@ -357,6 +357,24 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// Paths with spaces and umlauts (typical OneDrive/Dropbox folders on
+    /// Windows and macOS) — save, backup and reopen must work unchanged.
+    #[test]
+    fn unicode_and_space_paths() {
+        let dir = tmpdir("unicode").join("Jörg Müller — Tresore");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Mein Tresor ä.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw-ümlaut-€", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw-ümlaut-€");
+        a.unlocked.vault.entries.push(Entry::new("x"));
+        persist(&mut a).unwrap();
+        assert!(dir.join("Mein Tresor ä.keypile.bak").exists());
+        let reopened = format::open(&std::fs::read(&path).unwrap(), "pw-ümlaut-€", None).unwrap();
+        assert_eq!(reopened.vault.entries.len(), 1);
+        std::fs::remove_dir_all(dir.parent().unwrap()).ok();
+    }
+
     #[test]
     fn wipe_clears_secrets() {
         let mut v = Vault::new("t");

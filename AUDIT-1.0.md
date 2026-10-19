@@ -168,3 +168,70 @@ Legende: **T** = automatisiert getestet · **U** = im UI-Durchlauf getestet · *
 `tauri.conf.json` (MSI verlangt numerisches `x.y.z` — erfüllt), `workflow_dispatch` baut alle vier
 Ziele und lädt Artefakte hoch, Signatur/Notarisierung bleiben unverändert aktiv, sobald die
 Apple-Secrets gesetzt sind. Kein Änderungsbedarf.
+
+## 8. Verifikation (unabhängige Zweitprüfung)
+
+Stand: 2026-10-19 · geprüft: Diff `28fd8d2..ec3cbbc` vollständig (Rust, Frontend, Konfiguration, CI).
+
+### Selbst ausgeführt
+
+| Prüfung | Ergebnis |
+|---|---|
+| `cargo test --workspace` (vor eigenen Änderungen) | Core 42/42, App 7/7 grün — Angaben bestätigt |
+| `cargo test --workspace` (nach eigenen Änderungen) | Core 43/43, App 8/8 grün |
+| `cargo clippy --workspace` | 0 Fehler, 2 Stil-Hinweise (`sort_by_key`, `split_once`) — bestätigt |
+| `pnpm build` (`tsc` strict + Vite) | fehlerfrei |
+| `pnpm audit` | 0 Befunde |
+| IPC-Abgleich | 34 Commands in `generate_handler!` = 34 Aufrufe in `src/api.ts`, Namen und Argumente (camelCase → snake_case) stimmen überein |
+| Version | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `Cargo.lock` (Paket `keypile`) = 1.0.0; `keypile-core` bewusst 0.3.0 (internes Crate, nicht ausgeliefert) |
+| `localizeError` + `baseName` | per Node-Skript mit 13 echten Backend-Meldungen und Windows-/UNC-/Umlaut-Pfaden ausgeführt |
+
+### Neue Tests
+
+- `format::crafted_headers_fail_cleanly` — präparierte Container (falsche Nonce-Länge, zu kurzes
+  Salt, Ciphertext kürzer als das GCM-Tag, KDF-Speicherbombe `m=u32::MAX`, Header-Länge hinter
+  Dateiende, Header kein JSON) enden alle mit Fehler, keiner mit Panic; die Speicherbombe wird
+  vor Argon2 abgelehnt.
+- `state::unicode_and_space_paths` — Speichern, `.bak` und erneutes Öffnen in
+  `Jörg Müller — Tresore/Mein Tresor ä.keypile` mit Umlaut-/€-Passwort.
+
+### Nachgebessert
+
+- **Import-Fehler in falscher Sprache:** Core-Importfehler kommen als `import error: <deutscher Text>`.
+  In der deutschen UI stand das englische Präfix davor, in der englischen UI blieb „kein gültiges
+  JSON“, „CSV konnte nicht gelesen werden“ und „JSON enthält kein 'items'-Array“ deutsch.
+  `src/errors.ts` entfernt das Präfix und übersetzt diese Meldungen; ebenso „Externe Vault-Datei
+  ist beschädigt/unlesbar“.
+- **Hilfe (DE+EN), Sicherheit & Sperren:** Hinweis ergänzt, dass der Windows-Zwischenablage-Verlauf
+  (Win+V, geräteübergreifender Verlauf) kopierte Secrets unabhängig vom automatischen Leeren
+  behält.
+
+### Bestätigt / nicht widerlegt
+
+- KDF-Grenzen greifen vor Argon2 (`derive_key` → `validate`), Default 64 MiB/t=3/p=4 liegt innerhalb.
+  Bestehende Tresore nutzen ausschließlich den Default (es gibt keine UI für andere Parameter).
+- `rekey`: Merge mit altem Schlüssel → neuer Schlüssel → `.bak` neu. Der Rollback-Zweig nach einem
+  Fehler beim **zweiten** Schreiben ist nur statisch geprüft (nicht ohne Umbau injizierbar); er setzt
+  Schlüssel und Header zurück, nur `meta.generation` bleibt erhöht (harmlos).
+- Windows-Pfade: `rename_with_retry` (20 × 100 ms bei Fehler 5/32), `backup_path` über
+  `with_extension`, Anzeige über `baseName` — alle ohne Unix-Annahmen. Die Tests nutzen
+  `std::env::temp_dir()` und laufen damit auch unter Windows.
+- Capabilities: Webview hat nur `core:default`, `dialog:default`, `opener:default`; Kopieren läuft
+  ausschließlich über Rust-Commands. Opener öffnet nur http(s)/mailto/tel; Eintrags-URLs ohne Schema
+  bekommen `https://` vorangestellt.
+- CI (`build.yml`): `workflow_dispatch` baut macOS arm64/Intel, Windows (MSI/NSIS) und Linux;
+  1.0.0 ist MSI-kompatibel; Signatur/Notarisierung unverändert. Kein Änderungsbedarf.
+
+### Zusätzliche Einschränkungen (nicht behoben, dokumentiert)
+
+- **Windows-Zwischenablage-Verlauf:** keypile setzt kein `ExcludeClipboardContentFromMonitorProcessing`
+  (bräuchte eine neue Windows-Abhängigkeit). Kopierte Secrets landen bei aktivem Win+V-Verlauf dort
+  und werden vom Auto-Clear nicht entfernt. Hinweis steht jetzt in der Hilfe.
+- **Argon2 läuft im Haupt-Thread** (`open_vault`, `create_vault`, `change_master_password` sind
+  synchrone Tauri-Commands). Mit Default-Parametern ~0,3–1 s Einfrieren; eine präparierte Datei an
+  der Obergrenze (1 GiB, t = 64) kann das Fenster bis zu etwa einer Minute blockieren, bevor die
+  Fehlermeldung kommt (begrenzt, kein Absturz).
+- `otpauth://`-URIs mit URL-kodiertem Secret (`%3D`-Padding) werden als ungültig abgelehnt (Fehler
+  beim Speichern, kein stiller Fehlwert).
+- Die Tastenkürzel-Hilfe zeigt ⌘-Symbole mit dem Hinweis „Strg unter Windows/Linux“; die Hinweiszeile
+  im Einstiegsabschnitt nennt nur ⌘.

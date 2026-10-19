@@ -226,6 +226,43 @@ mod tests {
         assert_ne!(h1.nonce, h2.nonce);
     }
 
+    /// Hostile/garbled containers must fail with an error, never panic.
+    fn container(header_json: &str, tail: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        out.extend_from_slice(&(header_json.len() as u32).to_le_bytes());
+        out.extend_from_slice(header_json.as_bytes());
+        out.extend_from_slice(tail);
+        out
+    }
+
+    #[test]
+    fn crafted_headers_fail_cleanly() {
+        let kdf = r#"{"algo":"argon2id","m_kib":8192,"t":1,"p":1}"#;
+        let salt16 = B64.encode([7u8; 16]);
+        let nonce12 = B64.encode([1u8; 12]);
+        // nonce of the wrong length
+        let h = format!(r#"{{"kdf":{kdf},"salt":"{salt16}","cipher":"aes-256-gcm","nonce":"{}"}}"#, B64.encode([1u8; 5]));
+        assert!(open(&container(&h, &[0u8; 32]), "pw", None).is_err());
+        // salt too short for Argon2
+        let h = format!(r#"{{"kdf":{kdf},"salt":"{}","cipher":"aes-256-gcm","nonce":"{nonce12}"}}"#, B64.encode([7u8; 4]));
+        assert!(open(&container(&h, &[0u8; 32]), "pw", None).is_err());
+        // ciphertext shorter than the GCM tag
+        let h = format!(r#"{{"kdf":{kdf},"salt":"{salt16}","cipher":"aes-256-gcm","nonce":"{nonce12}"}}"#);
+        assert!(open(&container(&h, &[0u8; 3]), "pw", None).is_err());
+        // memory bomb in the header is refused before Argon2 runs
+        let bomb = r#"{"algo":"argon2id","m_kib":4294967295,"t":4294967295,"p":255}"#;
+        let h = format!(r#"{{"kdf":{bomb},"salt":"{salt16}","cipher":"aes-256-gcm","nonce":"{nonce12}"}}"#);
+        assert!(matches!(open(&container(&h, &[0u8; 32]), "pw", None), Err(CoreError::Corrupt(_))));
+        // header length pointing past the end of the file
+        let mut b = container(&h, &[]);
+        b[10..14].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(open(&b, "pw", None).is_err());
+        // header that is not JSON
+        assert!(open(&container("not json", &[0u8; 32]), "pw", None).is_err());
+    }
+
     #[test]
     fn bad_magic_rejected() {
         assert!(matches!(

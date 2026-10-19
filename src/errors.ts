@@ -87,6 +87,22 @@ const rules: Rule[] = [
     en: () => 'The vault file on disk is corrupted — saving was aborted so nothing gets overwritten.',
   },
   {
+    re: /^(CSV konnte nicht gelesen werden|kein gültiges JSON): (.*)$/s,
+    de: (m) => m[0].charAt(0).toUpperCase() + m[0].slice(1),
+    en: (m) =>
+      `${m[1] === 'kein gültiges JSON' ? 'Not valid JSON' : 'Could not read the CSV'}: ${m[2]}`,
+  },
+  {
+    re: /JSON enthält kein 'items'-Array/,
+    de: (m) => m.input ?? m[0],
+    en: () => "The JSON has no 'items' array — is this a Bitwarden export?",
+  },
+  {
+    re: /^Externe Vault-Datei (ist beschädigt|unlesbar)/,
+    de: (m) => m.input ?? m[0],
+    en: () => 'The vault file was changed elsewhere and cannot be read — saving was aborted.',
+  },
+  {
     re: /^(Datei konnte nicht gelesen werden|Schlüsseldatei konnte nicht gelesen werden|Speichern fehlgeschlagen|Export fehlgeschlagen|Konnte Tresor nicht anlegen|Update-Prüfung fehlgeschlagen|Update fehlgeschlagen): (.*)$/s,
     de: (m) => m[0],
     en: (m) =>
@@ -105,7 +121,11 @@ const rules: Rule[] = [
 ];
 
 export function localizeError(err: unknown, lang: Lang): string {
-  const msg = String(err).replace(/^Error:\s*/, '');
+  // Core import errors carry an English prefix around a German text —
+  // drop it so both languages read cleanly.
+  const msg = String(err)
+    .replace(/^Error:\s*/, '')
+    .replace(/^import error:\s*/, '');
   for (const r of rules) {
     const m = msg.match(r.re);
     if (m) return lang === 'de' ? r.de(m) : r.en(m);
