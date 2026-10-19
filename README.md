@@ -30,7 +30,7 @@ verwenden**, siehe Disclaimer auf der Produktseite.
   Lizenz, Reise, Computer …), eigene Felder, Passwort-Historie, Favoriten,
   Archiv, Papierkorb
 - TOTP-Generator (RFC 6238, Base32 oder otpauth://-URIs) — unlocked-Feature,
-  in der Alpha frei
+  in der Testphase frei
 - Verschlüsselte Datei-Anhänge im Tresor (max. 10 MB) — unlocked-Feature
 - Audit-Dashboard: geleakt (HIBP), schwach, identisch, Passwort-Alter,
   2FA-Abdeckung — Basis-Checks in Free, volles Audit unlocked

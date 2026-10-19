@@ -2,7 +2,7 @@ import { useApp } from '../App';
 import { UnlockIcon } from '../icons';
 
 /** Marks a feature that belongs to the paid "unlocked" tier
- *  (free to test during the alpha — tooltip explains). */
+ *  (free to test during the trial phase — tooltip explains). */
 export default function UnlockedBadge() {
   const { t } = useApp();
   return (

@@ -82,7 +82,7 @@ const de: Content = {
       body: [
         'Einmalcodes (TOTP): den 2FA-Schlüssel im Eintrag hinterlegen — keypile zeigt den laufenden 6-stelligen Code direkt an.',
         'Datei-Anhänge: Dokumente sicher beim Eintrag ablegen, verschlüsselt im Tresor.',
-        'Beides gehört später zu keypile unlocked — in der Alpha ist es frei testbar.',
+        'Beides gehört später zu keypile unlocked — in der Testphase ist es frei testbar.',
       ],
     },
     {
@@ -164,7 +164,7 @@ const de: Content = {
       body: [
         'Hinterlege den 2FA-Schlüssel (das „Secret“ aus dem QR-Code) im Eintrag — als Base32 oder komplette otpauth://-URI. keypile zeigt den laufenden Code (meist 6-stellig; Stellen, Periode und SHA-1/256/512 übernimmt es aus der URI) mit Ablauf-Anzeige.',
         'Code kopieren: ein Klick. So liegen Passwort und zweiter Faktor beisammen — praktisch; wer maximale Trennung will, nutzt weiterhin eine separate Authenticator-App.',
-        'TOTP startet als Teil von keypile unlocked und ist in der Alpha frei testbar.',
+        'TOTP startet als Teil von keypile unlocked und ist in der Testphase frei testbar.',
       ],
     },
     {
@@ -173,7 +173,7 @@ const de: Content = {
       body: [
         'Dateien (Recovery-Codes, Verträge, Scans) lassen sich direkt am Eintrag ablegen — verschlüsselt im Tresor, nicht daneben. Bis 10 MB pro Datei.',
         'Anhänge lassen sich jederzeit wieder als Datei speichern oder vom Eintrag entfernen.',
-        'Anhänge starten als Teil von keypile unlocked und sind in der Alpha frei testbar.',
+        'Anhänge starten als Teil von keypile unlocked und sind in der Testphase frei testbar.',
       ],
     },
     {
@@ -205,7 +205,7 @@ const de: Content = {
         'Windows: Ist der Zwischenablage-Verlauf (Win+V) oder der geräteübergreifende Verlauf aktiv, legt Windows kopierte Secrets dort zusätzlich ab — das automatische Leeren erreicht diesen Verlauf nicht. Für Passwörter den Verlauf besser ausschalten (Einstellungen → System → Zwischenablage).',
         '• Manuell sperren — jederzeit über den Sperren-Knopf',
         'Kryptografie: Argon2id als Schlüsselableitung, AES-256-GCM für die Daten. Format und Verfahren sind dokumentiert (FORMAT.md im Repo).',
-        'Alpha-Hinweis: Die Krypto ist dokumentiert, aber noch nicht extern auditiert — für produktive Passwörter bitte den Beta-Start abwarten.',
+        'Hinweis: Die Krypto ist offen dokumentiert und intern auditiert (AUDIT-1.0.md), aber noch nicht von einer externen Stelle geprüft.',
       ],
     },
     {
@@ -247,7 +247,7 @@ const de: Content = {
       title: 'Free & unlocked',
       body: [
         'keypile Free bleibt kostenlos — der lokale Tresor ist keine Testversion: Einträge, Ordner, Generator, Passwort-Check, Import/Export und Sync über deinen Cloud-Ordner.',
-        'keypile unlocked (12 € im Jahr, 1 € im Monat) bündelt später TOTP, Anhänge und weitere Extras — in der Alpha ist alles davon frei testbar.',
+        'keypile unlocked (12 € im Jahr, 1 € im Monat) bündelt später TOTP, Anhänge und weitere Extras — in der Testphase ist alles davon frei testbar.',
       ],
     },
   ],
@@ -304,7 +304,7 @@ const en: Content = {
       body: [
         'One-time codes (TOTP): store the 2FA secret in an entry — keypile shows the running 6-digit code right there.',
         'File attachments: keep documents with the entry, encrypted inside the vault.',
-        'Both will belong to keypile unlocked — free to test during the alpha.',
+        'Both will belong to keypile unlocked — free to test during the trial phase.',
       ],
     },
     {
@@ -386,7 +386,7 @@ const en: Content = {
       body: [
         'Store the 2FA secret (the “secret” behind the QR code) in an entry — as Base32 or a full otpauth:// URI. keypile shows the running code (usually 6 digits; digits, period and SHA-1/256/512 are taken from the URI) with an expiry indicator.',
         'Copy the code with one click. Password and second factor live together — convenient; if you want maximum separation, keep using a separate authenticator app.',
-        'TOTP launches as part of keypile unlocked and is free to test in the alpha.',
+        'TOTP launches as part of keypile unlocked and is free to test during the trial phase.',
       ],
     },
     {
@@ -395,7 +395,7 @@ const en: Content = {
       body: [
         'Files (recovery codes, contracts, scans) can be stored right on an entry — encrypted inside the vault, not next to it. Up to 10 MB per file.',
         'Attachments can be saved back to disk or removed from the entry anytime.',
-        'Attachments launch as part of keypile unlocked and are free to test in the alpha.',
+        'Attachments launch as part of keypile unlocked and are free to test during the trial phase.',
       ],
     },
     {
@@ -427,7 +427,7 @@ const en: Content = {
         'Windows: if clipboard history (Win+V) or cross-device sync is on, Windows keeps its own copy of copied secrets there — the automatic clearing does not reach that history. For passwords, better turn it off (Settings → System → Clipboard).',
         '• Manual lock — anytime via the lock button',
         'Cryptography: Argon2id for key derivation, AES-256-GCM for the data. Format and procedures are documented (FORMAT.md in the repo).',
-        'Alpha note: the crypto is documented but not externally audited yet — please wait for the beta before trusting it with production passwords.',
+        'Note: the crypto is openly documented and internally audited (AUDIT-1.0.md), but has not yet been reviewed by an external party.',
       ],
     },
     {
@@ -469,7 +469,7 @@ const en: Content = {
       title: 'Free & unlocked',
       body: [
         'keypile Free stays free — the local vault is not a trial: entries, folders, generator, password check, import/export and sync via your cloud folder.',
-        'keypile unlocked (€12 a year, €1 a month) will later bundle TOTP, attachments and further extras — during the alpha all of it is free to test.',
+        'keypile unlocked (€12 a year, €1 a month) will later bundle TOTP, attachments and further extras — during the trial phase all of it is free to test.',
       ],
     },
   ],
