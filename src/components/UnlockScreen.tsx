@@ -28,9 +28,14 @@ export default function UnlockScreen() {
   const pickVault = async (preset?: string) => {
     let file = preset;
     if (!file) {
-      const sel = await pickFile({
-        filters: [{ name: 'keypile', extensions: ['keypile'] }],
-      });
+      let sel: string | null = null;
+      try {
+        sel = await pickFile({
+          filters: [{ name: 'keypile', extensions: ['keypile'] }],
+        });
+      } catch (err) {
+        setError(localizeError(err, settings.language));
+      }
       if (!sel) return;
       file = sel;
     }
@@ -50,8 +55,12 @@ export default function UnlockScreen() {
   };
 
   const pickKeyfile = async () => {
-    const sel = await pickFile();
-    if (sel) setKeyfile(sel);
+    try {
+      const sel = await pickFile();
+      if (sel) setKeyfile(sel);
+    } catch (err) {
+      setError(localizeError(err, settings.language));
+    }
   };
 
   const doUnlock = async (e: FormEvent) => {
@@ -94,8 +103,12 @@ export default function UnlockScreen() {
   };
 
   const forgetRecent = async (p: string) => {
-    await api.forgetRecentVault(p);
-    await reloadSettings();
+    try {
+      await api.forgetRecentVault(p);
+      await reloadSettings();
+    } catch (err) {
+      setError(localizeError(err, settings.language));
+    }
   };
 
   return (
@@ -125,6 +138,7 @@ export default function UnlockScreen() {
               <div style={{ height: 14 }} />
             </>
           )}
+          {error && <div className="error-text">{error}</div>}
           <div className="row">
             <button onClick={() => pickVault()}>{t.openVault}</button>
             <button
@@ -154,7 +168,7 @@ export default function UnlockScreen() {
             />
           </label>
           <div className="row" style={{ marginBottom: 12 }}>
-            <button type="button" className="ghost" onClick={pickKeyfile}>
+            <button type="button" className="ghost" disabled={busy} onClick={pickKeyfile}>
               {keyfile ? baseName(keyfile) : t.keyfileOptional}
             </button>
             {keyfile && (
@@ -165,7 +179,7 @@ export default function UnlockScreen() {
           </div>
           {error && <div className="error-text">{error}</div>}
           <div className="row" style={{ marginTop: 14 }}>
-            <button type="button" onClick={() => setMode('home')}>
+            <button type="button" disabled={busy} onClick={() => setMode('home')}>
               {t.back}
             </button>
             <button className="primary" type="submit" disabled={busy || !password}>
@@ -196,7 +210,7 @@ export default function UnlockScreen() {
             />
           </label>
           <div className="row" style={{ marginBottom: 6 }}>
-            <button type="button" className="ghost" onClick={pickKeyfile}>
+            <button type="button" className="ghost" disabled={busy} onClick={pickKeyfile}>
               {keyfile ? baseName(keyfile) : t.keyfileOptional}
             </button>
             {keyfile && (
@@ -211,7 +225,7 @@ export default function UnlockScreen() {
           </div>
           {error && <div className="error-text">{error}</div>}
           <div className="row" style={{ marginTop: 14 }}>
-            <button type="button" onClick={() => setMode('home')}>
+            <button type="button" disabled={busy} onClick={() => setMode('home')}>
               {t.back}
             </button>
             <button

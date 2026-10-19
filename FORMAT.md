@@ -102,6 +102,7 @@ Entry:
   "password_changed": "<RFC3339|null>",
   "history": [ { "password": "…", "replaced": "<RFC3339>" } ],
   "deleted": false, "deleted_at": null,
+  "purged": false,
   "vv": { "<device_id>": 3 }
 }
 ```
@@ -117,8 +118,9 @@ Entry:
   Wert). Unbekannte Werte werden als `text` dargestellt.
 - `archived` blendet Einträge aus der Hauptliste aus, ohne sie zu löschen.
 - `history` ist auf 10 Einträge begrenzt (neueste zuerst).
+- `purged` wird nur geschrieben, wenn es `true` ist (Purge-Tombstone, §6).
 - Alle in Version 1 nachgereichten Felder (`category`, `attachments`,
-  `archived`) haben Defaults — ältere Dateien bleiben ohne Migration lesbar.
+  `archived`, `purged`) haben Defaults — ältere Dateien bleiben ohne Migration lesbar.
 - Unbekannte Felder MÜSSEN beim Lesen erhalten und beim Schreiben
   zurückgeschrieben werden? — Nein: Version 1 definiert das Schema
   abschließend; neue Felder erfordern einen Versionssprung mit `#[serde(default)]`-
@@ -136,8 +138,10 @@ pro Eintrag:
    dominierende Version gewinnt. Das schließt Tombstones ein: ein
    dominierendes `deleted: true` löscht.
 3. Nebenläufig (keiner dominiert) → **beide behalten**: lokale Version bleibt,
-   entfernte wird als Konflikt-Kopie (`"<Titel> (Konflikt)"`, neue UUID)
-   angefügt. Die Versionsvektoren werden vereinigt, damit der Konflikt beim
+   entfernte wird als Konflikt-Kopie (`"<Titel> (Konflikt)"` bzw. in
+   englischer UI `"<Titel> (conflict)"`, neue UUID) angefügt. Ist die
+   entfernte Version ein Purge-Tombstone (`purged: true`), entsteht keine
+   Kopie — die lokale Bearbeitung bleibt einfach stehen. Die Versionsvektoren werden vereinigt, damit der Konflikt beim
    nächsten Merge nicht erneut aufschlägt. Niemals stilles Überschreiben.
 
 Ordner werden per ID vereinigt; dominiert der Versionsvektor eines Ordners,
@@ -145,8 +149,16 @@ Ordner werden per ID vereinigt; dominiert der Versionsvektor eines Ordners,
 synchronisieren so mit). Bei nebenläufigen Ordner-Änderungen bleibt der lokale
 Stand, die Vektoren werden vereinigt.
 
-Gelöschte Einträge bleiben als Tombstone (`deleted: true`) im Tresor, bis der
-Papierkorb geleert wird — sonst würden Löschungen beim Sync wiederauferstehen.
+Gelöschte Einträge bleiben als Tombstone (`deleted: true`) im Tresor — sonst
+würden Löschungen beim Sync wiederauferstehen. „Papierkorb leeren“ und
+„Endgültig löschen“ entfernen den Eintrag nicht, sondern machen daraus einen
+**Purge-Tombstone** (`purged: true`, `deleted: true`): alle Inhalte (Titel,
+Benutzername, Passwort, Notizen, TOTP, eigene Felder, Historie, Anhänge, URLs,
+Tags, Ordner) werden geleert, `id`, Zeitstempel und Versionsvektor bleiben, und
+der Purge zählt als Änderung (`vv[device_id] += 1`). So dominiert er die
+Kopien anderer Geräte und repliziert. Clients zeigen Purge-Tombstones nirgends
+an. Ältere Clients (vor 1.0) kennen das Feld nicht und zeigen sie als leere
+Einträge im Papierkorb.
 
 ## 7. Speichern (Implementierungspflichten)
 

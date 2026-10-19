@@ -43,9 +43,12 @@ verwenden**, siehe Disclaimer auf der Produktseite.
   oder ohne BOM) und unverschlüsseltes Bitwarden-JSON; Export: CSV (mit Warnung)
 - Cloud-Sync über beliebige Sync-Ordner: externe Änderungen an der
   Tresor-Datei werden per Versionsvektor-Merge zusammengeführt — Konflikte
-  landen als Kopien im Tresor, nie stiller Datenverlust
+  landen als Kopien im Tresor, nie stiller Datenverlust; endgültiges Löschen
+  synchronisiert als inhaltsleerer Tombstone mit
 - Auto-Lock (auch nach Ruhezustand), Sperren bei Fokusverlust,
-  Zwischenablage-Auto-Clear (spätestens beim Sperren), Master-Passwort-Wechsel
+  Zwischenablage-Auto-Clear (spätestens beim Sperren oder Beenden; Secrets
+  sind vom Windows-Verlauf Win+V und von macOS-Clipboard-Managern
+  ausgenommen), Argon2 im Hintergrund-Thread, Master-Passwort-Wechsel
   inkl. Schlüsseldatei tauschen/entfernen, DE/EN, Hell/Dunkel,
   Tastaturkürzel, In-App-Handbuch
 
@@ -57,6 +60,7 @@ Voraussetzungen: Rust (stable), Node 22, pnpm.
 pnpm install
 pnpm exec tauri dev      # Dev-App
 cargo test --workspace       # Core- + App-Tests (Format/Krypto/Merge/TOTP/Import/Speichern)
+pnpm test                    # UI-Helfer: Fehlerübersetzung, Kürzel (Strg/⌘), Dateinamen
 pnpm build                   # Typecheck + Frontend-Build
 pnpm exec tauri build    # Release-Bundles (macOS: .app + .dmg)
 ```

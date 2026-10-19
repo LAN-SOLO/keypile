@@ -41,8 +41,50 @@ export async function pickSavePath(options: SaveDialogOptions = {}) {
   return typeof sel === 'string' ? sel : null;
 }
 
-export function confirmDialog(message: string): Promise<boolean> {
-  return guarded(() => tauriConfirm(message));
+/** Native yes/no dialog. Always awaited: tauri-plugin-dialog replaces
+ *  window.confirm with an async stub that is always truthy (see AUDIT-1.0.md,
+ *  Runde 2). Button labels come from the UI language — the plugin defaults
+ *  are English ("Ok"/"Cancel") even in the German UI. */
+export function confirmDialog(
+  message: string,
+  labels: { ok: string; cancel: string },
+  kind: 'info' | 'warning' = 'warning'
+): Promise<boolean> {
+  return guarded(() =>
+    tauriConfirm(message, {
+      title: 'keypile',
+      kind,
+      okLabel: labels.ok,
+      cancelLabel: labels.cancel,
+    })
+  );
+}
+
+const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+
+/** Suggested file name for a save dialog from untrusted data (attachment
+ *  names arrive through synced vault files): no path separators or
+ *  characters Windows rejects, no reserved device names, no trailing dots or
+ *  spaces (NTFS drops them), bounded length. Umlauts and spaces stay. */
+export function safeFileName(name: string, fallback = 'attachment'): string {
+  let n = name
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim()
+    .replace(/[. ]+$/, '');
+  if (!n) n = fallback;
+  if (RESERVED.test(n)) n = `_${n}`;
+  if (n.length > 200) {
+    const dot = n.lastIndexOf('.');
+    const ext = dot > 0 && n.length - dot <= 16 ? n.slice(dot) : '';
+    n = n.slice(0, 200 - ext.length) + ext;
+  }
+  return n;
+}
+
+/** Windows/Linux save dialogs do not always append the filter extension. */
+export function withExtension(path: string, ext: string): string {
+  return path.toLowerCase().endsWith(`.${ext}`) ? path : `${path}.${ext}`;
 }
 
 /** Last path segment for display — handles Windows backslashes too. */

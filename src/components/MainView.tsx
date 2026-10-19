@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, EntrySummary, Folder } from '../api';
-import { MOD } from '../keys';
+import { isModKey, modLabel, openExternal } from '../keys';
 import { useApp } from '../App';
 import { confirmDialog } from '../dialogs';
 import EntryDetail from './EntryDetail';
@@ -76,7 +76,8 @@ export type Filter =
   | { kind: 'folder'; id: string };
 
 export default function MainView() {
-  const { t, toast, lock, refreshStatus, update, openUpdateModal } = useApp();
+  const { t, toast, lock, refreshStatus, update, openUpdateModal, settings } = useApp();
+  const MOD = modLabel(settings.language);
   const [entries, setEntries] = useState<EntrySummary[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
@@ -222,7 +223,7 @@ export default function MainView() {
   // ↑/↓ walk the entry list. Copy/edit follow KeePassXC/Enpass conventions.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = isModKey(e);
       const key = e.key.toLowerCase();
       if (mod && key === 'l') {
         e.preventDefault();
@@ -292,10 +293,7 @@ export default function MainView() {
         copySelected('totp');
       } else if (key === 'u' && sel?.url) {
         e.preventDefault();
-        import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
-          const u = sel.url!;
-          openUrl(/^https?:\/\//i.test(u) ? u : `https://${u}`);
-        });
+        openExternal(sel.url).catch((err) => toast(String(err), true));
       } else if (key === 'e' && filter.kind !== 'trash' && !sel?.deleted) {
         e.preventDefault();
         setEditing(true);
@@ -314,6 +312,7 @@ export default function MainView() {
     entries,
     selectedId,
     copySelected,
+    toast,
   ]);
 
   // keep the keyboard-selected entry in view
@@ -324,7 +323,7 @@ export default function MainView() {
   }, [selectedId]);
 
   const removeFolder = async (id: string) => {
-    if (!(await confirmDialog(t.confirmDeleteFolder))) return;
+    if (!(await confirmDialog(t.confirmDeleteFolder, { ok: t.delete, cancel: t.cancel }))) return;
     try {
       await api.deleteFolder(id);
       if (filter.kind === 'folder' && filter.id === id) setFilter({ kind: 'all' });
@@ -549,7 +548,7 @@ export default function MainView() {
                 <button
                   className="danger"
                   onClick={async () => {
-                    if (await confirmDialog(t.confirmEmptyTrash)) {
+                    if (await confirmDialog(t.confirmEmptyTrash, { ok: t.emptyTrash, cancel: t.cancel })) {
                       try {
                         await api.emptyTrash();
                         setSelectedId(null);

@@ -6,6 +6,8 @@
 //!   the dominating entry (this includes tombstones: a dominating delete wins).
 //! - Concurrent edits (neither VV dominates) → keep BOTH: the local entry
 //!   stays, the remote one is added as a conflict copy for manual resolution.
+//!   A purged tombstone (`purged: true`) never becomes a conflict copy: it
+//!   holds no data, so a concurrent edit on the other side simply survives.
 
 use std::collections::BTreeMap;
 
@@ -50,6 +52,12 @@ pub struct MergeResult {
 /// Merge `remote` into `local`. Folder merge is name-based and additive
 /// (folders are cheap; entries are the data that must never be lost).
 pub fn merge(local: &Vault, remote: &Vault) -> MergeResult {
+    merge_with_label(local, remote, "Konflikt")
+}
+
+/// Like [`merge`], with the word appended to conflict copies ("Title (label)")
+/// in the UI language of the device that does the merge.
+pub fn merge_with_label(local: &Vault, remote: &Vault, label: &str) -> MergeResult {
     let mut out = local.clone();
     let mut conflicts = 0;
     let mut taken_remote = 0;
@@ -96,9 +104,14 @@ pub fn merge(local: &Vault, remote: &Vault) -> MergeResult {
                         *slot = (*slot).max(*c);
                     }
                     le.vv = merged_vv.clone();
+                    if re.purged {
+                        // a purge tombstone carries no data: the concurrent
+                        // local edit simply survives, nothing to copy
+                        continue;
+                    }
                     let mut copy = re.clone();
                     copy.id = uuid::Uuid::new_v4();
-                    copy.title = format!("{} (Konflikt)", copy.title);
+                    copy.title = format!("{} ({label})", copy.title);
                     copy.vv = merged_vv;
                     out.entries.push(copy);
                     conflicts += 1;
@@ -190,6 +203,10 @@ mod tests {
         let r2 = merge(&r.vault, &remote);
         assert_eq!(r2.conflicts, 0);
         assert_eq!(r2.vault.entries.len(), 2);
+        // English UI: the conflict copy carries the English word
+        let r3 = merge_with_label(&local, &remote, "conflict");
+        assert!(r3.vault.entries.iter().any(|e| e.title == "site (conflict)"));
+        assert!(!r3.vault.entries.iter().any(|e| e.title.contains("Konflikt")));
     }
 
     #[test]
@@ -220,6 +237,62 @@ mod tests {
         // local newer → stays
         let r = merge(&remote_del, &local);
         assert!(r.vault.folders[0].deleted);
+    }
+
+    /// Emptying the trash on one device must not be undone by a device that
+    /// still holds the (deleted) entry — the purge tombstone dominates.
+    #[test]
+    fn purge_replicates_instead_of_resurrecting() {
+        let mut e = Entry::new("site");
+        e.password = "secret".into();
+        e.touch("A");
+        e.deleted = true;
+        e.touch("A");
+        let other_device = vault_with(vec![e.clone()]);
+        let mut purged = e.clone();
+        purged.purge("A");
+        let local = vault_with(vec![purged]);
+        // both directions: the purge wins and no content comes back
+        for r in [merge(&local, &other_device), merge(&other_device, &local)] {
+            assert_eq!(r.vault.entries.len(), 1);
+            let x = &r.vault.entries[0];
+            assert!(x.purged && x.deleted);
+            assert!(x.title.is_empty() && x.password.is_empty());
+            assert_eq!(r.conflicts, 0);
+        }
+    }
+
+    /// A concurrent edit on another device survives a purge (never lose data):
+    /// purged locally + edited remotely → the edit comes back as conflict copy;
+    /// edited locally + purged remotely → the local edit stays, no junk copy.
+    #[test]
+    fn concurrent_edit_survives_purge() {
+        let mut base = Entry::new("site");
+        base.touch("A");
+        let mut purged = base.clone();
+        purged.purge("A");
+        let mut edited = base.clone();
+        edited.password = "new".into();
+        edited.touch("B");
+
+        let r = merge(&vault_with(vec![purged.clone()]), &vault_with(vec![edited.clone()]));
+        assert_eq!(r.conflicts, 1);
+        assert!(r.vault.entries.iter().any(|e| !e.purged && e.password == "new"));
+
+        let r = merge(&vault_with(vec![edited]), &vault_with(vec![purged]));
+        assert_eq!(r.vault.entries.len(), 1);
+        assert!(!r.vault.entries[0].purged);
+        assert_eq!(r.vault.entries[0].password, "new");
+    }
+
+    #[test]
+    fn purged_flag_roundtrips_and_is_omitted_when_false() {
+        let mut e = Entry::new("x");
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(!json.contains("purged"));
+        e.purge("A");
+        let back: Entry = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert!(back.purged && back.deleted && back.title.is_empty());
     }
 
     #[test]

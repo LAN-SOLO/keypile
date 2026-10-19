@@ -13,6 +13,9 @@ keypile-core = { path = "../core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
+# already in the tree via the clipboard plugin; used directly to flag copied
+# secrets as "exclude from clipboard history" (Win+V / macOS clipboard managers)
+arboard = "3.6"
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

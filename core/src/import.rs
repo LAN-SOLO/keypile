@@ -263,7 +263,9 @@ pub fn import_bitwarden_json(data: &str, device_id: &str) -> Result<ImportResult
     })
 }
 
-/// Export the vault as CSV (KeePassXC-compatible columns).
+/// Export the vault as CSV (KeePassXC-compatible columns). Starts with a
+/// UTF-8 BOM: without it Excel on Windows reads the file as ANSI and mangles
+/// umlauts; every importer here (and KeePassXC/Bitwarden) skips the BOM.
 pub fn export_csv(vault: &Vault) -> Result<String> {
     let mut wtr = csv::Writer::from_writer(Vec::new());
     wtr.write_record(["Group", "Title", "Username", "Password", "URL", "Notes", "TOTP"])
@@ -285,11 +287,12 @@ pub fn export_csv(vault: &Vault) -> Result<String> {
         ])
         .map_err(|e| CoreError::Import(e.to_string()))?;
     }
-    String::from_utf8(
+    let body = String::from_utf8(
         wtr.into_inner()
             .map_err(|e| CoreError::Import(e.to_string()))?,
     )
-    .map_err(|e| CoreError::Import(e.to_string()))
+    .map_err(|e| CoreError::Import(e.to_string()))?;
+    Ok(format!("\u{feff}{body}"))
 }
 
 #[cfg(test)]
@@ -355,6 +358,7 @@ mod tests {
         e.notes = "line1\nline2".into();
         vault.entries.push(e);
         let out = export_csv(&vault).unwrap();
+        assert!(out.starts_with('\u{feff}'), "Excel needs the UTF-8 BOM");
         let re = import_csv(&out, "dev").unwrap();
         assert_eq!(re.entries[0].title, "a,b \"quoted\"");
         assert_eq!(re.entries[0].password, "p,w\n2");
@@ -403,6 +407,7 @@ mod tests {
         let mut vault = Vault::new("t");
         vault.entries = imported.entries;
         let out = export_csv(&vault).unwrap();
+        assert!(out.starts_with('\u{feff}'), "Excel needs the UTF-8 BOM");
         let re = import_csv(&out, "dev").unwrap();
         assert_eq!(re.entries.len(), 1);
         assert_eq!(re.entries[0].password, "p");

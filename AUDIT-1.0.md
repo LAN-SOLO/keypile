@@ -114,15 +114,15 @@ Legende: **T** = automatisiert getestet · **U** = im UI-Durchlauf getestet · *
 
 - **Kein externer Krypto-Audit.** Die In-App-Texte (Hilfe, Plan) sprechen weiterhin von „Alpha“ —
   ob 1.0 diese Hinweise behält, ist eine Produktentscheidung.
-- Papierkorb leeren / endgültig löschen entfernt den Tombstone. Hat ein anderes Gerät den Eintrag
-  noch, taucht er beim nächsten Sync wieder auf (kein Datenverlust, aber keine Lösch-Synchronisation).
+- ~~Papierkorb leeren / endgültig löschen entfernt den Tombstone~~ — behoben in Runde 2 (Purge-Tombstone, §9).
 - CSV-Export ist Klartext und wird nicht gegen Formel-Injection in Tabellenprogrammen entschärft
   (ein Präfix würde Passwörter verfälschen, die mit `=`, `+`, `-` oder `@` beginnen).
 - Import erwartet UTF-8; UTF-16- oder ANSI-CSV wird mit klarer Meldung abgelehnt.
 - Schlüsseldateien werden vollständig eingelesen (keine Größenbegrenzung, wie KeePassXC).
 - Zeroize ist best effort: Kopien in WebView/JS-Heap (z. B. angezeigte Passwörter) kontrolliert die App nicht.
-- Beendet man die App vor Ablauf des Zwischenablage-Timers, bleibt das Secret in der Zwischenablage.
-- Native Bestätigungsdialoge zeigen die Knopfbeschriftung des Betriebssystems.
+- ~~Beendet man die App vor Ablauf des Zwischenablage-Timers, bleibt das Secret in der Zwischenablage~~ — behoben in Runde 2.
+- ~~Native Bestätigungsdialoge zeigen die Knopfbeschriftung des Betriebssystems~~ — behoben in Runde 2 (Beschriftung in UI-Sprache).
+- Ein hart beendeter Prozess (Absturz, Task-Manager „Task beenden“) kann ein kopiertes Secret nicht mehr entfernen.
 
 ## 6. Manuelle Testliste
 
@@ -133,7 +133,11 @@ Legende: **T** = automatisiert getestet · **U** = im UI-Durchlauf getestet · *
 - [ ] Tresor anlegen in iCloud Drive; mit Schlüsseldatei anlegen; schließen, erneut öffnen
 - [ ] Falsches Passwort → verständliche Meldung; Schlüsseldatei vergessen → gleiche Meldung
 - [ ] Login-Eintrag mit TOTP; Code stimmt mit einer Authenticator-App überein
-- [ ] ⌘C/⌘B/⌘T kopieren; nach 30 s ist die Zwischenablage leer; Sperren (⌘L) leert sie sofort
+- [ ] ⌘C/⌘B/⌘T kopieren; nach 30 s ist die Zwischenablage leer; Sperren (⌘L) und Beenden (⌘Q) leeren sie sofort
+- [ ] Mit einem Clipboard-Manager (z. B. Maccy, Raycast): kopierte Passwörter landen nicht im Verlauf
+- [ ] Entsperren mit Standard-Parametern: Fenster bleibt während Argon2 bedienbar (Spinner „…“), „Zurück“ ist währenddessen gesperrt
+- [ ] Bestätigungsdialoge: Knöpfe in UI-Sprache, Abbrechen ändert nichts
+- [ ] Zwei Geräte: auf A Papierkorb leeren, B speichert danach — der Eintrag kommt auf A **nicht** zurück; auf B gleichzeitig bearbeitet → Bearbeitung bleibt erhalten
 - [ ] Eigene Felder per ≡ ziehen und neu anordnen
 - [ ] Anhang hinzufügen (PDF), „Speichern unter“, Datei öffnet korrekt; > 10 MB wird abgelehnt
 - [ ] „Sperren bei Fokusverlust“ an: Anhang-Dialog sperrt nicht, Wechsel zu anderer App sperrt
@@ -153,7 +157,10 @@ Legende: **T** = automatisiert getestet · **U** = im UI-Durchlauf getestet · *
 - [ ] Speichern dauerhaft mehrmals hintereinander, während OneDrive synchronisiert (kein „Zugriff verweigert“)
 - [ ] Laufwerksbuchstaben/UNC: Tresor auf USB-Stick (`E:\`) und Netzlaufwerk öffnen
 - [ ] Strg+C/B/T/U/E/N/F/G/,/L; Strg+C in einem Textfeld kopiert weiterhin markierten Text
-- [ ] Zwischenablage-Auto-Clear und Löschen beim Sperren (Win+V-Verlauf beachten)
+- [ ] Zwischenablage-Auto-Clear und Löschen beim Sperren und beim Beenden
+- [ ] Win+V-Verlauf und geräteübergreifende Zwischenablage aktiv: kopiertes Passwort erscheint **nicht** im Verlauf (Runde 2), normaler Text aus anderen Apps weiterhin schon
+- [ ] Bestätigungsdialoge (Löschen, Papierkorb leeren, Ordner löschen, Anhang entfernen, CSV-Export): deutsche Knöpfe, **Abbrechen/Esc/Schließen-X lässt alles unverändert**
+- [ ] Tooltips/Handbuch zeigen „Strg+…“ (deutsch) bzw. „Ctrl+…“ (englisch); AltGr+Q (@) in einem Feld löst kein Kürzel aus
 - [ ] Anhang-/Import-/Export-Dialoge, Dateifilter `.keypile`, `.csv`, `.json`
 - [ ] Drag & Drop eigener Felder in WebView2
 - [ ] „Sperren bei Fokusverlust“ mit Dateidialogen und Alt+Tab
@@ -224,14 +231,71 @@ Stand: 2026-10-19 · geprüft: Diff `28fd8d2..ec3cbbc` vollständig (Rust, Front
 
 ### Zusätzliche Einschränkungen (nicht behoben, dokumentiert)
 
-- **Windows-Zwischenablage-Verlauf:** keypile setzt kein `ExcludeClipboardContentFromMonitorProcessing`
+- *(behoben in Runde 2, §9)* **Windows-Zwischenablage-Verlauf:** keypile setzt kein `ExcludeClipboardContentFromMonitorProcessing`
   (bräuchte eine neue Windows-Abhängigkeit). Kopierte Secrets landen bei aktivem Win+V-Verlauf dort
   und werden vom Auto-Clear nicht entfernt. Hinweis steht jetzt in der Hilfe.
-- **Argon2 läuft im Haupt-Thread** (`open_vault`, `create_vault`, `change_master_password` sind
+- *(behoben in Runde 2, §9)* **Argon2 läuft im Haupt-Thread** (`open_vault`, `create_vault`, `change_master_password` sind
   synchrone Tauri-Commands). Mit Default-Parametern ~0,3–1 s Einfrieren; eine präparierte Datei an
   der Obergrenze (1 GiB, t = 64) kann das Fenster bis zu etwa einer Minute blockieren, bevor die
   Fehlermeldung kommt (begrenzt, kein Absturz).
-- `otpauth://`-URIs mit URL-kodiertem Secret (`%3D`-Padding) werden als ungültig abgelehnt (Fehler
+- *(behoben in Runde 2, §9)* `otpauth://`-URIs mit URL-kodiertem Secret (`%3D`-Padding) werden als ungültig abgelehnt (Fehler
   beim Speichern, kein stiller Fehlwert).
-- Die Tastenkürzel-Hilfe zeigt ⌘-Symbole mit dem Hinweis „Strg unter Windows/Linux“; die Hinweiszeile
+- *(behoben in Runde 2, §9)* Die Tastenkürzel-Hilfe zeigt ⌘-Symbole mit dem Hinweis „Strg unter Windows/Linux“; die Hinweiszeile
   im Einstiegsabschnitt nennt nur ⌘.
+
+## 9. Runde 2 (2026-10-20)
+
+Basis: `863cb3e` (origin/main). Ziel: jede Funktion fehlerfrei auf Windows und macOS, Muster L1–L13
+aus den anderen Apps gezielt gesucht. Ein unvollständiger, uncommitteter Zwischenstand einer
+früheren Sitzung (Purge-Tombstone, async-Commands, Zwischenablage-Ausschluss, Settings-Sperre,
+TOTP-Prozentkodierung, CSV-BOM) wurde geprüft, korrigiert (u. a. ein Panic) und übernommen.
+
+### Behoben
+
+| # | Befund | Lösung |
+|---|---|---|
+| L8 | Argon2 (Öffnen, Anlegen, Master-Passwort ändern) lief synchron im Haupt-Thread → Fenster fror ein, bei präparierter Datei bis ~1 min | `open_vault`/`create_vault`/`change_master_password` sind `async` + `spawn_blocking`; alle übrigen Commands `#[tauri::command(async)]` (Datei-IO, Import, Export, Anhänge laufen nicht mehr im Haupt-Thread). Beim Passwortwechsel laufen beide Argon2-Läufe ohne Session-Sperre; danach wird geprüft, ob der Tresor noch derselbe und entsperrt ist |
+| L9 | Während des Entsperrens konnte man „Zurück“ drücken und einen anderen Tresor wählen | „Zurück“ und Schlüsseldatei-Knopf sind gesperrt, solange `busy` |
+| — | Zwischenablage: Secrets landeten im Windows-Verlauf (Win+V) und in der Cloud-Zwischenablage; blieben nach dem Beenden liegen | Kopieren über `arboard` (bereits im Lockfile, kam über das Clipboard-Plugin, jetzt direkt eingebunden) mit `exclude_from_history` + `exclude_from_cloud` (Windows-Formate `CanIncludeInClipboardHistory`/`CanUploadToCloudClipboard`) bzw. `org.nspasteboard.ConcealedType` (macOS); `RunEvent::Exit` leert die Zwischenablage, wenn sie noch das Secret hält |
+| — | Papierkorb leeren/endgültig löschen entfernte den Tombstone → Eintrag kam per Sync zurück | Purge-Tombstone `purged: true` (Inhalte geleert/zeroized, `vv` erhöht), unsichtbar in allen Commands; Merge erzeugt aus einem Purge keine Konflikt-Kopie. FORMAT.md §6 |
+| L1/L11 | Native Bestätigungsdialoge mit englischen Knöpfen „Ok/Cancel“ in der deutschen UI | `confirmDialog(msg, {ok, cancel})` mit sprechenden Knöpfen („Löschen“/„Abbrechen“, „Papierkorb leeren“ …) und `kind: warning`. Geprüft: Plugin 2.7.2 liefert bei eigenen Knöpfen das geklickte Label (rfd `Custom`), Esc/X → `Cancel` → `false`. Kein `window.confirm/alert/prompt` im Code |
+| L11 | Fehler beim Öffnen von URLs (Opener), Dateidialogen und „Aus der Liste entfernen“ wurden verschluckt | `openExternal()` mit Toast, Dialogaufrufe im try/catch, Fehler auf dem Startbildschirm sichtbar |
+| L2 | Unübersetzte Backend-Meldungen: „Zwischenablage nicht verfügbar“, „Interner Fehler“, „HIBP-Fehler: HTTP …“, „Header beschädigt“, „Unbekanntes Feld“, `crypto error`, `i/o error`, `serialization error`, HOTP-Ablehnung | Regeln in `src/errors.ts`; Test prüft 25 echte Meldungen gegen deutsche Wörter in der EN-Ausgabe |
+| L2 | Konflikt-Kopien hießen auch in der englischen UI „Titel (Konflikt)“, die Konfliktdatei „… (Konflikt).keypile“ | `merge_with_label` + `Session.conflict_label` aus der UI-Sprache (wird beim Sprachwechsel nachgeführt) |
+| L6 | Kürzel-Hinweise zeigten unter Windows „Ctrl+“ auch in der deutschen UI, das Handbuch nur „⌘“ | `modLabel(lang)`: ⌘ / „Strg+“ / „Ctrl+“; Handbuch ersetzt `⌘X` zur Laufzeit. Als Kürzel-Taste zählt unter Windows nur Strg ohne Alt (AltGr kommt als Strg+Alt an — defensiv, damit AltGr-Eingaben nie ein Kürzel auslösen), unter macOS nur ⌘ (vorher lösten dort auch Ctrl-Kombinationen aus) |
+| L10 | Datumsangaben (Erstellt/Geändert, Verlauf, Datumsfelder, Update-Datum) folgten der OS-Locale statt der UI-Sprache; das Updater-Datum (`2026-10-01 12:00:00.0 +00:00:00`) ließ sich nicht parsen und fehlte immer | `uiLocale(lang)`; Update-Datum aus `YYYY-MM-DD` als lokales Kalenderdatum |
+| L4 | CSV-Export ohne BOM → Excel (Windows) zeigt Umlaute falsch; `settings.json` mit BOM (Notepad) wurde verworfen | Export mit UTF-8-BOM (alle Importer überspringen sie); Settings lesen BOM |
+| L5 | Anhangsnamen aus synchronisierten Tresoren gingen ungefiltert als `defaultPath` in den Speichern-Dialog (`..\..\x`, `CON`, `a:b`) | `safeFileName()` (Trenner/`:*?"<>|`/Steuerzeichen → `_`, reservierte Namen, Punkte/Leerzeichen am Ende, Länge); Umlaute/Leerzeichen bleiben. Der Zielpfad selbst kommt immer aus dem nativen Dialog |
+| L5 | Export ohne `.csv`, wenn der Windows-Dialog die Endung nicht anhängt; „Zuletzt geöffnet“ doppelt bei anderer Groß-/Kleinschreibung (NTFS) | `withExtension()`; `same_path()` vergleicht unter Windows case-insensitiv und mit `/`=`\` |
+| — | `settings.json` nicht atomar geschrieben, parallele async-Commands konnten sich überschreiben; kaputte Datei → bei jedem Aufruf neue Geräte-ID | Mutex um Lesen-Ändern-Schreiben, Temp-Datei + `rename_with_retry`; kaputte/fehlende Datei wird sofort mit Defaults ersetzt |
+| — | TOTP: `%3D`-Padding und `OTPAUTH://` abgelehnt; `otpauth://hotp/` lieferte still falsche Codes | Prozent-Dekodierung, Schema case-insensitiv, HOTP mit klarer Meldung abgelehnt |
+| — | **Panic** im übernommenen Zwischenstand: `input[..10]` auf einem Secret mit Mehrbyte-Zeichen an Byte 10 | `input.get(..10)`; Test `multibyte_prefix_does_not_panic` |
+| Layout | Bei kleinem Fenster (880 × 560, Mindestgröße) wurde der Eintragstitel auf einen Buchstaben pro Zeile gequetscht; lange Benutzernamen erzeugten eine horizontale Scrollleiste in der Liste | Kopfzeile darf umbrechen (`flex: 1 1 160px; min-width: 0`), Listen-Unterzeile mit Ellipse |
+| Deps | `cargo audit`: rustls 0.23.43 (4 Advisories), quinn-proto 0.11.16 (5), chacha20 0.10.1 (yanked) | Lockfile-Patch-Updates auf rustls 0.23.46, quinn-proto 0.11.19, chacha20 0.10.2 |
+
+### Geprüft ohne Befund
+
+- L3 Erststart-Sprache: Rust-Default aus `$LANG`, beim ersten Start übernimmt das Frontend `navigator.language` (Runde 1).
+- L7 Kein HTML-Rendering fremder Inhalte (kein `innerHTML`/`dangerouslySetInnerHTML`, Changelog als Text), CSP `default-src 'self'`.
+- L12 Alle sichtbaren Texte aus `i18n.ts` (EN ist `typeof de`, fehlende Schlüssel brechen den Build); Hilfe DE+EN an alle Änderungen angepasst.
+- L13 Updater: Endpoint `releases/latest/download/latest.json`, Releases werden nicht als Prerelease veröffentlicht, Pubkey gesetzt, Semver-Vergleich mit 1.0.0 durch das Plugin; Fehler mit übersetztem Präfix, Startprüfung still.
+
+### Ausgeführt
+
+| Prüfung | Ergebnis |
+|---|---|
+| `cargo test --workspace` | Core 49/49, App 11/11 |
+| `cargo clippy --workspace --tests` | 0 Warnungen |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken) | fehlerfrei, inkl. `arboard::SetExtWindows` |
+| `cargo audit` | verbleibend: `zip` 4.6.1 (3 Advisories zu `extract`/Symlinks/SUID; nur im Updater, der ausschließlich minisign-signierte Pakete entpackt; Fix erst mit zip ≥ 9 = Major-Update des Updater-Plugins), `glib` 0.18 (nur Linux/GTK), unmaintained-Hinweise (unic-*, proc-macro-error, zbus/zvariant) |
+| `pnpm test` (neu, Node `--experimental-strip-types`, keine neue Abhängigkeit) | 6/6: Fehlerübersetzung DE/EN, Strg/Ctrl/⌘ inkl. simuliertem WebView2, AltGr, `safeFileName`, `withExtension` |
+| `pnpm build` | fehlerfrei |
+| Headless Chromium, gemockte IPC (Dialog-Plugin wie 2.7.2: Label-Rückgabe, `window.confirm` als immer-wahrer Stub), 880 × 560, DE/EN × Dunkel/Hell, je einmal als Windows (`Win32`) und macOS | 4 × 22 Schritte grün: falsches Passwort (übersetzt, „Zurück“ gesperrt), Entsperren, Detail (Kürzel-Labels, Datumsformat in UI-Sprache bei abweichender OS-Locale), Anhang speichern (bereinigter Name), Kopierfehler, Löschen **Abbrechen ändert nichts**, Löschen OK, Papierkorb leeren (Abbrechen/OK), langer Titel, HOTP-Fehler, Einstellungen, Export (Abbrechen, Endung), Update-Dialog (Datum), Update-Fehler, Audit + HIBP-Fehler, Generator, Handbuch (Kürzel), keine unbekannten Commands. Layout-Prüfung (Seitenbreite, abgeschnittene Knöpfe, horizontale Scrollleisten, gequetschte Überschriften) ohne Befund nach den Fixes; Screenshots gesichtet |
+
+### Nur auf echter Hardware prüfbar
+
+- Win+V-/Cloud-Zwischenablage-Ausschluss und macOS-Clipboard-Manager (ConcealedType) mit echten Tools.
+- Zwischenablage leeren bei `RunEvent::Exit` (⌘Q, Fenster schließen, Updater-Neustart).
+- Native Dialoge mit eigenen Knöpfen (TaskDialog unter Windows, NSAlert unter macOS), Esc/X = Abbrechen.
+- Echte Tauri-IPC mit async-Commands (Fenster bleibt während Argon2 bedienbar), Ruhezustand, OneDrive/AV-Sperren, UNC/USB-Pfade, WebView2-Kürzel mit deutscher Tastatur (AltGr), Drag & Drop in WebView2/WKWebView, Updater, Signatur/Notarisierung, SmartScreen.
+- Purge-Sync mit zwei echten Geräten über einen Cloud-Ordner.

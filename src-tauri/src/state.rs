@@ -14,6 +14,13 @@ pub struct Session {
     /// SHA-256 of the vault file as we last read/wrote it — used to detect
     /// external modifications (e.g. a cloud sync client pulled a newer copy).
     pub disk_hash: [u8; 32],
+    /// Word for conflict copies ("Titel (Konflikt)" / "Title (conflict)") —
+    /// follows the UI language, updated when the language changes.
+    pub conflict_label: String,
+}
+
+pub fn conflict_label(language: &str) -> String {
+    if language == "de" { "Konflikt" } else { "conflict" }.to_string()
 }
 
 impl Drop for Session {
@@ -94,7 +101,7 @@ pub fn backup_path(path: &Path) -> PathBuf {
 /// On Windows, sync clients (OneDrive, Dropbox) and virus scanners briefly
 /// hold the target open without FILE_SHARE_DELETE, so MoveFileEx fails with
 /// "access denied" for a few hundred milliseconds. Retry before giving up.
-fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+pub fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     let attempts = if cfg!(windows) { 20 } else { 1 };
     let mut last = None;
     for i in 0..attempts {
@@ -144,7 +151,11 @@ pub fn persist(session: &mut Session) -> Result<PersistOutcome, String> {
                         Ok(plain) => {
                             let disk_vault: keypile_core::Vault = serde_json::from_slice(&plain)
                                 .map_err(|e| format!("Externe Vault-Datei unlesbar: {e}"))?;
-                            let m = merge::merge(&session.unlocked.vault, &disk_vault);
+                            let m = merge::merge_with_label(
+                                &session.unlocked.vault,
+                                &disk_vault,
+                                &session.conflict_label,
+                            );
                             session.unlocked.vault = m.vault;
                             outcome.merged_external_changes = true;
                             outcome.conflicts = m.conflicts;
@@ -152,7 +163,7 @@ pub fn persist(session: &mut Session) -> Result<PersistOutcome, String> {
                         Err(_) => {
                             // Different key (e.g. master password changed elsewhere):
                             // do not overwrite. Save our version as a conflict copy.
-                            let alt = conflict_path(&session.path);
+                            let alt = conflict_path(&session.path, &session.conflict_label);
                             let bytes = format::seal(
                                 &session.unlocked.vault,
                                 &session.unlocked.key,
@@ -221,12 +232,12 @@ pub fn rekey(
     Ok(())
 }
 
-fn conflict_path(path: &Path) -> PathBuf {
+fn conflict_path(path: &Path, label: &str) -> PathBuf {
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("vault");
-    path.with_file_name(format!("{stem} (Konflikt).keypile"))
+    path.with_file_name(format!("{stem} ({label}).keypile"))
 }
 
 #[cfg(test)]
@@ -260,6 +271,7 @@ mod tests {
             path: path.to_path_buf(),
             unlocked: format::open(&bytes, pw, None).unwrap(),
             disk_hash: file_hash(&bytes),
+            conflict_label: conflict_label("de"),
         }
     }
 
@@ -329,6 +341,11 @@ mod tests {
         assert!(dir.join("v (Konflikt).keypile").exists());
         // the foreign file was not overwritten
         assert_eq!(std::fs::read(&path).unwrap(), other);
+        // English UI: the copy is named in English
+        a.conflict_label = conflict_label("en");
+        let err = persist(&mut a).unwrap_err();
+        assert!(err.contains("v (conflict).keypile"));
+        assert!(dir.join("v (conflict).keypile").exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -402,6 +419,7 @@ mod tests {
             path: path.clone(),
             unlocked: unlocked_a,
             disk_hash: file_hash(&bytes),
+            conflict_label: conflict_label("de"),
         };
 
         // device B opens the same file, adds an entry, writes it back

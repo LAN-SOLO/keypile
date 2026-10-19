@@ -4,9 +4,9 @@ import { useApp } from '../App';
 import StrengthMeter from './StrengthMeter';
 import GeneratorModal from './GeneratorModal';
 import UnlockedBadge from './UnlockedBadge';
-import { confirmDialog, pickFile, pickSavePath } from '../dialogs';
+import { confirmDialog, pickFile, pickSavePath, safeFileName } from '../dialogs';
 import { Category, TEMPLATES, normalizeCategory, parseTemplateField } from '../templates';
-import { MOD } from '../keys';
+import { modLabel, openExternal, uiLocale } from '../keys';
 import { localizeError } from '../errors';
 import { ArchiveIcon, CategoryIcon, PaperclipIcon } from '../icons';
 
@@ -44,7 +44,8 @@ const draftFor = (cat: Category, t: { templateFields: Record<string, string> }):
 });
 
 export default function EntryDetail(props: Props) {
-  const { t, toast } = useApp();
+  const { t, toast, settings } = useApp();
+  const MOD = modLabel(settings.language);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [draft, setDraft] = useState<EntryInput>(draftFor(props.newCategory ?? 'login', t));
   const [revealed, setRevealed] = useState(false);
@@ -139,7 +140,7 @@ export default function EntryDetail(props: Props) {
   const remove = () =>
     run(async () => {
       if (!entry) return;
-      if (!(await confirmDialog(t.confirmDelete))) return;
+      if (!(await confirmDialog(t.confirmDelete, { ok: t.delete, cancel: t.cancel }))) return;
       await api.deleteEntry(entry.id);
       await props.onChanged(null);
     });
@@ -147,7 +148,7 @@ export default function EntryDetail(props: Props) {
   const purge = () =>
     run(async () => {
       if (!entry) return;
-      if (!(await confirmDialog(t.confirmPurge))) return;
+      if (!(await confirmDialog(t.confirmPurge, { ok: t.deleteForever, cancel: t.cancel }))) return;
       await api.purgeEntry(entry.id);
       await props.onChanged(null);
     });
@@ -169,9 +170,9 @@ export default function EntryDetail(props: Props) {
 
   const addAttachment = async () => {
     if (!entry) return;
-    const sel = await pickFile();
-    if (!sel) return;
     try {
+      const sel = await pickFile();
+      if (!sel) return;
       const updated = await api.addAttachment(entry.id, sel);
       setEntry(updated);
       await props.onChanged(entry.id);
@@ -182,9 +183,11 @@ export default function EntryDetail(props: Props) {
 
   const saveAttachment = async (attId: string, name: string) => {
     if (!entry) return;
-    const sel = await pickSavePath({ defaultPath: name });
-    if (!sel) return;
     try {
+      // the name comes from the (possibly synced) vault — never let it steer
+      // the dialog into another folder or produce a name Windows rejects
+      const sel = await pickSavePath({ defaultPath: safeFileName(name) });
+      if (!sel) return;
       await api.saveAttachment(entry.id, attId, sel);
       toast('✓');
     } catch (err) {
@@ -194,7 +197,10 @@ export default function EntryDetail(props: Props) {
 
   const removeAttachment = async (attId: string) => {
     if (!entry) return;
-    if (!(await confirmDialog(t.confirmRemoveAttachment))) return;
+    if (
+      !(await confirmDialog(t.confirmRemoveAttachment, { ok: t.removeAttachment, cancel: t.cancel }))
+    )
+      return;
     try {
       await api.removeAttachment(entry.id, attId);
       await loadEntry(entry.id);
@@ -204,11 +210,7 @@ export default function EntryDetail(props: Props) {
     }
   };
 
-  const openUrl = async (url: string) => {
-    const { openUrl: doOpen } = await import('@tauri-apps/plugin-opener');
-    const full = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    await doOpen(full);
-  };
+  const openUrl = (url: string) => run(() => openExternal(url));
 
   const fmtSize = (bytes: number) =>
     bytes > 1024 * 1024
@@ -537,7 +539,7 @@ export default function EntryDetail(props: Props) {
 
   // ---------- view mode ----------
   if (!entry) return null;
-  const fmtDate = (iso: string) => new Date(iso).toLocaleString();
+  const fmtDate = (iso: string) => new Date(iso).toLocaleString(uiLocale(settings.language));
 
   return (
     <div>
@@ -772,7 +774,7 @@ function FieldOptionsModal({
 }
 
 function CustomFieldView({ field, onCopy }: { field: CustomField; onCopy: () => void }) {
-  const { t } = useApp();
+  const { t, toast, settings } = useApp();
   const [show, setShow] = useState(false);
   const ftype = normalizeFieldType(field.field_type);
   if (ftype === 'section') {
@@ -781,15 +783,11 @@ function CustomFieldView({ field, onCopy }: { field: CustomField; onCopy: () => 
   }
   if (!field.value) return null;
 
-  const openUrl = async (url: string) => {
-    const { openUrl: doOpen } = await import('@tauri-apps/plugin-opener');
-    const full = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    await doOpen(full);
-  };
+  const openUrl = (url: string) => openExternal(url).catch((err) => toast(String(err), true));
   const masked = field.protected && !show;
   const display =
     ftype === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(field.value)
-      ? new Date(`${field.value}T00:00:00`).toLocaleDateString()
+      ? new Date(`${field.value}T00:00:00`).toLocaleDateString(uiLocale(settings.language))
       : field.value;
 
   return (
@@ -835,6 +833,7 @@ function CustomFieldView({ field, onCopy }: { field: CustomField; onCopy: () => 
 function TotpBlock({ entryId, onCopy }: { entryId: string; onCopy: () => void }) {
   const { t, settings } = useApp();
   const lang = settings.language;
+  const MOD = modLabel(lang);
   const [code, setCode] = useState<{ code: string; remaining: number } | null>(null);
   const [error, setError] = useState('');
 

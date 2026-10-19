@@ -36,7 +36,8 @@ fn decode_base32(s: &str) -> Result<Vec<u8>> {
 /// Parse either a raw base32 secret or an otpauth:// URI.
 pub fn parse(input: &str) -> Result<TotpConfig> {
     let input = input.trim();
-    if input.starts_with("otpauth://") {
+    // `get` instead of slicing: byte 10 may sit inside a multi-byte char
+    if input.get(..10).is_some_and(|p| p.eq_ignore_ascii_case("otpauth://")) {
         parse_otpauth(input)
     } else {
         let secret = decode_base32(input)?;
@@ -52,10 +53,37 @@ pub fn parse(input: &str) -> Result<TotpConfig> {
     }
 }
 
+/// Minimal %XX decoding for otpauth query values (authenticator exports
+/// write the base32 padding as `%3D`). Invalid escapes are kept verbatim.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+            if let Some(v) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn parse_otpauth(uri: &str) -> Result<TotpConfig> {
+    // only time-based codes: an otpauth://hotp/ secret would silently
+    // produce wrong (time-based) codes
+    let kind = uri[10..].split(['/', '?']).next().unwrap_or("");
+    if !kind.eq_ignore_ascii_case("totp") {
+        return Err(CoreError::Totp(format!("unsupported otpauth type '{kind}' (only totp)")));
+    }
     let query = uri
-        .splitn(2, '?')
-        .nth(1)
+        .split_once('?')
+        .map(|(_, q)| q)
         .ok_or_else(|| CoreError::Totp("otpauth URI has no query string".into()))?;
     let mut secret = None;
     let mut digits = 6u32;
@@ -64,7 +92,8 @@ fn parse_otpauth(uri: &str) -> Result<TotpConfig> {
     for pair in query.split('&') {
         let mut kv = pair.splitn(2, '=');
         let k = kv.next().unwrap_or("").to_lowercase();
-        let v = kv.next().unwrap_or("");
+        let v = percent_decode(kv.next().unwrap_or(""));
+        let v = v.as_str();
         match k.as_str() {
             "secret" => secret = Some(decode_base32(v)?),
             "digits" => {
@@ -207,6 +236,27 @@ mod tests {
             algorithm: Algo::Sha512,
         };
         assert_eq!(code_at(&c512, 59).0, "90693936");
+    }
+
+    #[test]
+    fn percent_encoded_padding_and_case() {
+        let c = parse("OTPAUTH://totp/Ex%3Aalice?secret=JBSWY3DPEHPK3PXP%3D%3D%3D&digits=6").unwrap();
+        assert_eq!(c.secret, b"Hello!\xde\xad\xbe\xef");
+        // lone / broken escapes do not panic
+        assert!(parse("otpauth://totp/x?secret=JBSW%").is_err());
+        assert!(parse("otpauth://totp/x?secret=JBSW%Z").is_err());
+    }
+
+    #[test]
+    fn multibyte_prefix_does_not_panic() {
+        // byte 10 falls inside "ä" — slicing would panic
+        assert!(parse("otpauth:/äx?secret=JBSWY3DPEHPK3PXP").is_err());
+        assert!(parse("ääääää").is_err());
+    }
+
+    #[test]
+    fn rejects_hotp_uri() {
+        assert!(parse("otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP&counter=1").is_err());
     }
 
     #[test]

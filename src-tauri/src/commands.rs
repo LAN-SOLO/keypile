@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use uuid::Uuid;
 use zeroize::Zeroize;
@@ -86,7 +86,13 @@ fn status_of(session: &Option<Session>) -> StatusDto {
             path: Some(s.path.display().to_string()),
             name: Some(s.unlocked.vault.meta.name.clone()),
             entry_count: s.unlocked.vault.entries.iter().filter(|e| !e.deleted).count(),
-            trash_count: s.unlocked.vault.entries.iter().filter(|e| e.deleted).count(),
+            trash_count: s
+                .unlocked
+                .vault
+                .entries
+                .iter()
+                .filter(|e| e.deleted && !e.purged)
+                .count(),
             uses_keyfile: s.unlocked.header.keyfile,
         },
     }
@@ -101,6 +107,31 @@ fn with_session<T>(
     f(session)
 }
 
+/// Entry lookup for commands: purge tombstones are invisible to the UI.
+fn find(vault: &Vault, id: Uuid) -> Result<&Entry, String> {
+    vault
+        .entry(id)
+        .filter(|e| !e.purged)
+        .ok_or_else(|| "Eintrag nicht gefunden".to_string())
+}
+
+fn find_mut(vault: &mut Vault, id: Uuid) -> Result<&mut Entry, String> {
+    vault
+        .entry_mut(id)
+        .filter(|e| !e.purged)
+        .ok_or_else(|| "Eintrag nicht gefunden".to_string())
+}
+
+/// Run CPU-/IO-heavy work (Argon2, file IO) on the blocking pool so the
+/// window never freezes — sync Tauri commands would run on the main thread.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("Interner Fehler: {e}"))?
+}
+
 fn read_keyfile(path: &Option<String>) -> Result<Option<Vec<u8>>, String> {
     match path {
         None => Ok(None),
@@ -112,7 +143,7 @@ fn read_keyfile(path: &Option<String>) -> Result<Option<Vec<u8>>, String> {
 
 // ---------- settings ----------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_settings(app: tauri::AppHandle) -> Settings {
     settings::load(&app)
 }
@@ -121,43 +152,64 @@ pub fn get_settings(app: tauri::AppHandle) -> Settings {
 /// owned by the backend: the UI holds a snapshot that goes stale as soon as a
 /// vault is opened, so writing it back would drop recent entries (or, worse,
 /// change the device id that version vectors rely on).
-#[tauri::command]
-pub fn set_settings(app: tauri::AppHandle, new_settings: Settings) -> Settings {
-    let current = settings::load(&app);
-    let mut next = new_settings;
-    next.recent_vaults = current.recent_vaults;
-    next.device_id = current.device_id;
-    next.auto_lock_minutes = next.auto_lock_minutes.min(24 * 60);
-    next.clipboard_clear_seconds = next.clipboard_clear_seconds.min(3600);
-    if next.language != "de" && next.language != "en" {
-        next.language = "en".into();
+#[tauri::command(async)]
+pub fn set_settings(
+    app: tauri::AppHandle,
+    st: State<'_, AppState>,
+    new_settings: Settings,
+) -> Settings {
+    let stored = settings::update(&app, |current| {
+        let mut next = new_settings;
+        next.recent_vaults = std::mem::take(&mut current.recent_vaults);
+        next.device_id = std::mem::take(&mut current.device_id);
+        next.auto_lock_minutes = next.auto_lock_minutes.min(24 * 60);
+        next.clipboard_clear_seconds = next.clipboard_clear_seconds.min(3600);
+        if next.language != "de" && next.language != "en" {
+            next.language = "en".into();
+        }
+        if next.theme != "dark" && next.theme != "light" {
+            next.theme = "dark".into();
+        }
+        *current = next;
+        current.clone()
+    });
+    if let Ok(mut guard) = st.session.lock() {
+        if let Some(s) = guard.as_mut() {
+            s.conflict_label = state::conflict_label(&stored.language);
+        }
     }
-    if next.theme != "dark" && next.theme != "light" {
-        next.theme = "dark".into();
-    }
-    settings::store(&app, &next);
-    next
+    stored
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn forget_recent_vault(app: tauri::AppHandle, path: String) -> Settings {
-    let mut s = settings::load(&app);
-    s.recent_vaults.retain(|p| p != &path);
-    settings::store(&app, &s);
-    s
+    settings::update(&app, |s| {
+        s.recent_vaults.retain(|p| !settings::same_path(p, &path));
+        s.clone()
+    })
 }
 
 // ---------- vault lifecycle ----------
 
 #[tauri::command]
-pub fn create_vault(
+pub async fn create_vault(
     app: tauri::AppHandle,
-    st: State<'_, AppState>,
+    path: String,
+    name: String,
+    password: String,
+    keyfile_path: Option<String>,
+) -> Result<StatusDto, String> {
+    blocking(move || create_vault_blocking(app, path, name, password, keyfile_path)).await
+}
+
+fn create_vault_blocking(
+    app: tauri::AppHandle,
     path: String,
     name: String,
     mut password: String,
     keyfile_path: Option<String>,
 ) -> Result<StatusDto, String> {
+    let st = app.state::<AppState>();
     if password.len() < 8 {
         password.zeroize();
         return Err("Das Master-Passwort muss mindestens 8 Zeichen haben".into());
@@ -171,20 +223,16 @@ pub fn create_vault(
     };
     let name = if name.trim().is_empty() { "keypile".to_string() } else { name.trim().to_string() };
     let vault = Vault::new(&name);
-    let (bytes, unlocked) = format::create(
-        &vault,
-        &password,
-        keyfile.as_deref(),
-        KdfParams::default(),
-    )
-    .map_err(|e| e.to_string())?;
+    let created = format::create(&vault, &password, keyfile.as_deref(), KdfParams::default());
     password.zeroize();
+    let (bytes, unlocked) = created.map_err(|e| e.to_string())?;
     let pb = PathBuf::from(&path);
     state::atomic_write(&pb, &bytes).map_err(|e| format!("Konnte Tresor nicht anlegen: {e}"))?;
     let session = Session {
         path: pb,
         unlocked,
         disk_hash: state::file_hash(&bytes),
+        conflict_label: state::conflict_label(&settings::load(&app).language),
     };
     settings::remember_vault(&app, &path);
     let mut guard = st.session.lock().map_err(|_| "state poisoned")?;
@@ -193,13 +241,22 @@ pub fn create_vault(
 }
 
 #[tauri::command]
-pub fn open_vault(
+pub async fn open_vault(
     app: tauri::AppHandle,
-    st: State<'_, AppState>,
+    path: String,
+    password: String,
+    keyfile_path: Option<String>,
+) -> Result<StatusDto, String> {
+    blocking(move || open_vault_blocking(app, path, password, keyfile_path)).await
+}
+
+fn open_vault_blocking(
+    app: tauri::AppHandle,
     path: String,
     mut password: String,
     keyfile_path: Option<String>,
 ) -> Result<StatusDto, String> {
+    let st = app.state::<AppState>();
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
@@ -221,6 +278,7 @@ pub fn open_vault(
         path: PathBuf::from(&path),
         unlocked,
         disk_hash: state::file_hash(&bytes),
+        conflict_label: state::conflict_label(&settings::load(&app).language),
     };
     settings::remember_vault(&app, &path);
     let mut guard = st.session.lock().map_err(|_| "state poisoned")?;
@@ -228,18 +286,19 @@ pub fn open_vault(
     Ok(status_of(&guard))
 }
 
-#[tauri::command]
-pub fn lock_vault(app: tauri::AppHandle, st: State<'_, AppState>) {
+#[tauri::command(async)]
+pub fn lock_vault(app: tauri::AppHandle, st: State<'_, AppState>) -> Result<(), String> {
     // UnlockedVault's key is Zeroizing and Session::drop wipes the decrypted
     // secrets — dropping the session is the lock.
     if let Ok(mut guard) = st.session.lock() {
         *guard = None;
     }
     // a secret copied from this vault must not outlive the lock
-    clear_clipboard_if_ours(&app, &st);
+    clear_clipboard_if_ours(&app);
+    Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn vault_status(st: State<'_, AppState>) -> Result<StatusDto, String> {
     let guard = st.session.lock().map_err(|_| "state poisoned")?;
     Ok(status_of(&guard))
@@ -247,7 +306,7 @@ pub fn vault_status(st: State<'_, AppState>) -> Result<StatusDto, String> {
 
 // ---------- entries ----------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_entries(st: State<'_, AppState>) -> Result<Vec<EntrySummary>, String> {
     with_session(&st, |s| {
         let mut list: Vec<EntrySummary> = s
@@ -255,6 +314,7 @@ pub fn list_entries(st: State<'_, AppState>) -> Result<Vec<EntrySummary>, String
             .vault
             .entries
             .iter()
+            .filter(|e| !e.purged)
             .map(|e| EntrySummary {
                 id: e.id,
                 title: e.title.clone(),
@@ -271,20 +331,15 @@ pub fn list_entries(st: State<'_, AppState>) -> Result<Vec<EntrySummary>, String
                 modified: e.modified.to_rfc3339(),
             })
             .collect();
-        list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        list.sort_by_cached_key(|e| e.title.to_lowercase());
         Ok(list)
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_entry(st: State<'_, AppState>, id: Uuid) -> Result<Entry, String> {
     with_session(&st, |s| {
-        let mut e = s
-            .unlocked
-            .vault
-            .entry(id)
-            .cloned()
-            .ok_or_else(|| "Eintrag nicht gefunden".to_string())?;
+        let mut e = find(&s.unlocked.vault, id)?.clone();
         // strip attachment bytes — the UI gets metadata only and pulls file
         // contents via save_attachment when the user exports one
         for a in &mut e.attachments {
@@ -294,7 +349,7 @@ pub fn get_entry(st: State<'_, AppState>, id: Uuid) -> Result<Entry, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_entry(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -307,7 +362,15 @@ pub fn save_entry(
     }
     with_session(&st, |s| {
         let vault = &mut s.unlocked.vault;
-        let entry = match input.id.and_then(|id| vault.entry_mut(id)) {
+        let existing = match input.id {
+            Some(id) => match vault.entry_mut(id) {
+                // edited elsewhere and purged meanwhile — never resurrect
+                Some(e) if e.purged => return Err("Eintrag nicht gefunden".into()),
+                other => other,
+            },
+            None => None,
+        };
+        let entry = match existing {
             Some(existing) => {
                 if existing.password != input.password {
                     if !existing.password.is_empty() {
@@ -389,11 +452,7 @@ fn set_deleted(
 ) -> Result<(), String> {
     let device_id = settings::load(app).device_id;
     with_session(st, |s| {
-        let e = s
-            .unlocked
-            .vault
-            .entry_mut(id)
-            .ok_or("Eintrag nicht gefunden")?;
+        let e = find_mut(&mut s.unlocked.vault, id)?;
         e.deleted = deleted;
         e.deleted_at = deleted.then(chrono::Utc::now);
         e.touch(&device_id);
@@ -402,7 +461,7 @@ fn set_deleted(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_entry(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -411,7 +470,7 @@ pub fn delete_entry(
     set_deleted(&app, &st, id, true)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn restore_entry(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -420,25 +479,37 @@ pub fn restore_entry(
     set_deleted(&app, &st, id, false)
 }
 
-#[tauri::command]
-pub fn purge_entry(st: State<'_, AppState>, id: Uuid) -> Result<(), String> {
+/// Permanent delete keeps a content-free tombstone (see `Entry::purge`) so the
+/// deletion syncs to other devices instead of the entry coming back.
+#[tauri::command(async)]
+pub fn purge_entry(
+    app: tauri::AppHandle,
+    st: State<'_, AppState>,
+    id: Uuid,
+) -> Result<(), String> {
+    let device_id = settings::load(&app).device_id;
     with_session(&st, |s| {
-        s.unlocked.vault.entries.retain(|e| e.id != id);
+        find_mut(&mut s.unlocked.vault, id)?.purge(&device_id);
         state::persist(s)?;
         Ok(())
     })
 }
 
-#[tauri::command]
-pub fn empty_trash(st: State<'_, AppState>) -> Result<(), String> {
+#[tauri::command(async)]
+pub fn empty_trash(app: tauri::AppHandle, st: State<'_, AppState>) -> Result<(), String> {
+    let device_id = settings::load(&app).device_id;
     with_session(&st, |s| {
-        s.unlocked.vault.entries.retain(|e| !e.deleted);
+        for e in s.unlocked.vault.entries.iter_mut() {
+            if e.deleted && !e.purged {
+                e.purge(&device_id);
+            }
+        }
         state::persist(s)?;
         Ok(())
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_archived(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -447,11 +518,7 @@ pub fn set_archived(
 ) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
     with_session(&st, |s| {
-        let e = s
-            .unlocked
-            .vault
-            .entry_mut(id)
-            .ok_or("Eintrag nicht gefunden")?;
+        let e = find_mut(&mut s.unlocked.vault, id)?;
         e.archived = archived;
         e.touch(&device_id);
         state::persist(s)?;
@@ -463,7 +530,7 @@ pub fn set_archived(
 
 const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_attachment(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -486,11 +553,7 @@ pub fn add_attachment(
         .to_string();
     with_session(&st, |s| {
         let mut copy = {
-            let e = s
-                .unlocked
-                .vault
-                .entry_mut(id)
-                .ok_or("Eintrag nicht gefunden")?;
+            let e = find_mut(&mut s.unlocked.vault, id)?;
             e.attachments.push(Attachment {
                 id: Uuid::new_v4(),
                 name,
@@ -508,7 +571,7 @@ pub fn add_attachment(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_attachment(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -517,11 +580,7 @@ pub fn remove_attachment(
 ) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
     with_session(&st, |s| {
-        let e = s
-            .unlocked
-            .vault
-            .entry_mut(id)
-            .ok_or("Eintrag nicht gefunden")?;
+        let e = find_mut(&mut s.unlocked.vault, id)?;
         e.attachments.retain(|a| a.id != attachment_id);
         e.touch(&device_id);
         state::persist(s)?;
@@ -529,7 +588,7 @@ pub fn remove_attachment(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_attachment(
     st: State<'_, AppState>,
     id: Uuid,
@@ -538,7 +597,7 @@ pub fn save_attachment(
 ) -> Result<(), String> {
     use base64::Engine;
     with_session(&st, |s| {
-        let e = s.unlocked.vault.entry(id).ok_or("Eintrag nicht gefunden")?;
+        let e = find(&s.unlocked.vault, id)?;
         let a = e
             .attachments
             .iter()
@@ -554,7 +613,7 @@ pub fn save_attachment(
 
 // ---------- folders ----------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_folders(st: State<'_, AppState>) -> Result<Vec<Folder>, String> {
     with_session(&st, |s| {
         Ok(s.unlocked
@@ -567,7 +626,7 @@ pub fn list_folders(st: State<'_, AppState>) -> Result<Vec<Folder>, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_folder(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -604,7 +663,7 @@ pub fn save_folder(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_folder(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -639,7 +698,7 @@ pub fn generate_passphrase(options: PassphraseOptions) -> String {
     generator::generate_passphrase(&options)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn password_strength(password: String, context: Vec<String>) -> strength::Strength {
     let refs: Vec<&str> = context.iter().map(String::as_str).collect();
     strength::estimate(&password, &refs)
@@ -652,10 +711,10 @@ pub struct TotpDto {
     pub period: u64,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn totp_code(st: State<'_, AppState>, id: Uuid) -> Result<TotpDto, String> {
     with_session(&st, |s| {
-        let e = s.unlocked.vault.entry(id).ok_or("Eintrag nicht gefunden")?;
+        let e = find(&s.unlocked.vault, id)?;
         let secret = e.totp.as_deref().ok_or("Eintrag hat kein TOTP")?;
         let config = totp::parse(secret).map_err(|e| e.to_string())?;
         let now = std::time::SystemTime::now()
@@ -673,12 +732,40 @@ pub fn totp_code(st: State<'_, AppState>, id: Uuid) -> Result<TotpDto, String> {
 
 // ---------- clipboard ----------
 
+/// Put a secret on the clipboard, flagged so clipboard histories skip it:
+/// Windows (Win+V history and cloud clipboard) via the documented
+/// `CanIncludeInClipboardHistory`/`CanUploadToCloudClipboard` formats,
+/// macOS clipboard managers via `org.nspasteboard.ConcealedType`.
+fn write_secret(app: &tauri::AppHandle, text: &str) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", windows))]
+    {
+        let _ = app;
+        let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+        let set = cb.set();
+        #[cfg(target_os = "macos")]
+        let set = {
+            use arboard::SetExtApple;
+            set.exclude_from_history()
+        };
+        #[cfg(windows)]
+        let set = {
+            use arboard::SetExtWindows;
+            set.exclude_from_history().exclude_from_cloud()
+        };
+        set.text(text).map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        // Linux/X11: the plugin keeps the clipboard owner alive
+        app.clipboard().write_text(text.to_string()).map_err(|e| e.to_string())
+    }
+}
+
 fn copy_with_autoclear(app: tauri::AppHandle, mut text: String) -> Result<(), String> {
-    use tauri::Manager;
     let hash = state::file_hash(text.as_bytes());
-    let written = app.clipboard().write_text(text.clone());
+    let written = write_secret(&app, &text);
     text.zeroize();
-    written.map_err(|e| e.to_string())?;
+    written.map_err(|e| format!("Zwischenablage nicht verfügbar: {e}"))?;
     if let Ok(mut h) = app.state::<AppState>().clipboard_hash.lock() {
         *h = Some(hash);
     }
@@ -697,7 +784,10 @@ fn copy_with_autoclear(app: tauri::AppHandle, mut text: String) -> Result<(), St
     Ok(())
 }
 
-fn clear_clipboard_if_ours(app: &tauri::AppHandle, st: &State<'_, AppState>) {
+/// Wipe the clipboard if it still holds the last secret keypile copied
+/// (called on lock and when the app quits).
+pub fn clear_clipboard_if_ours(app: &tauri::AppHandle) {
+    let st = app.state::<AppState>();
     let Some(hash) = st.clipboard_hash.lock().ok().and_then(|mut h| h.take()) else {
         return;
     };
@@ -709,7 +799,7 @@ fn clear_clipboard_if_ours(app: &tauri::AppHandle, st: &State<'_, AppState>) {
 }
 
 /// Copy an arbitrary secret handed over from the UI (e.g. generator output).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn copy_secret(app: tauri::AppHandle, text: String) -> Result<(), String> {
     copy_with_autoclear(app, text)
 }
@@ -739,7 +829,7 @@ pub struct WeakDto {
     pub score: u8,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audit_report(st: State<'_, AppState>) -> Result<AuditDto, String> {
     with_session(&st, |s| {
         let now = chrono::Utc::now();
@@ -848,7 +938,7 @@ pub struct ImportDto {
     pub skipped: usize,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_file(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -905,7 +995,7 @@ pub fn import_file(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_csv_file(st: State<'_, AppState>, path: String) -> Result<usize, String> {
     with_session(&st, |s| {
         let csv = import::export_csv(&s.unlocked.vault).map_err(|e| e.to_string())?;
@@ -918,13 +1008,38 @@ pub fn export_csv_file(st: State<'_, AppState>, path: String) -> Result<usize, S
 // ---------- master password ----------
 
 #[tauri::command]
-pub fn change_master_password(
-    st: State<'_, AppState>,
+pub async fn change_master_password(
+    app: tauri::AppHandle,
+    current_password: String,
+    new_password: String,
+    current_keyfile_path: Option<String>,
+    new_keyfile_path: Option<String>,
+) -> Result<(), String> {
+    blocking(move || {
+        change_master_blocking(
+            app,
+            current_password,
+            new_password,
+            current_keyfile_path,
+            new_keyfile_path,
+        )
+    })
+    .await
+}
+
+/// Two Argon2 runs happen WITHOUT holding the session lock (other commands,
+/// the TOTP ticker and locking stay responsive). Before re-keying, the
+/// session is checked again: if the vault was locked or swapped meanwhile,
+/// nothing is changed.
+fn change_master_blocking(
+    app: tauri::AppHandle,
     mut current_password: String,
     mut new_password: String,
     current_keyfile_path: Option<String>,
     new_keyfile_path: Option<String>,
 ) -> Result<(), String> {
+    use base64::Engine;
+    let st = app.state::<AppState>();
     let wipe = |a: &mut String, b: &mut String| {
         a.zeroize();
         b.zeroize();
@@ -942,40 +1057,50 @@ pub fn change_master_password(
             return Err(e);
         }
     };
-    let result = with_session(&st, |s| {
-        // verify the current credentials against the live session key
-        use base64::Engine;
+    // snapshot what the KDF needs, then release the lock
+    let snapshot = with_session(&st, |s| {
+        Ok((
+            s.path.clone(),
+            s.unlocked.header.salt.clone(),
+            s.unlocked.header.kdf.clone(),
+            zeroize::Zeroizing::new(*s.unlocked.key),
+        ))
+    });
+    let (path, salt_b64, kdf, live_key) = match snapshot {
+        Ok(x) => x,
+        Err(e) => {
+            wipe(&mut current_password, &mut new_password);
+            return Err(e);
+        }
+    };
+    let derived = (|| {
         let salt = base64::engine::general_purpose::STANDARD
-            .decode(&s.unlocked.header.salt)
-            .map_err(|_| "Header beschädigt")?;
+            .decode(&salt_b64)
+            .map_err(|_| "Header beschädigt".to_string())?;
         let check = keypile_core::crypto::derive_key(
             &current_password,
             current_keyfile.as_deref(),
             &salt,
-            &s.unlocked.header.kdf,
+            &kdf,
         )
         .map_err(|e| e.to_string())?;
-        if !keypile_core::crypto::ct_eq(check.as_slice(), s.unlocked.key.as_slice()) {
-            return Err("Aktuelles Master-Passwort (oder Schlüsseldatei) ist falsch".into());
+        if !keypile_core::crypto::ct_eq(check.as_slice(), live_key.as_slice()) {
+            return Err("Aktuelles Master-Passwort (oder Schlüsseldatei) ist falsch".to_string());
         }
-        // fresh salt + new key
         let new_salt = keypile_core::crypto::random_bytes(keypile_core::crypto::SALT_LEN);
-        let new_key = keypile_core::crypto::derive_key(
-            &new_password,
-            new_keyfile.as_deref(),
-            &new_salt,
-            &s.unlocked.header.kdf,
-        )
-        .map_err(|e| e.to_string())?;
-        state::rekey(
-            s,
-            new_key,
-            base64::engine::general_purpose::STANDARD.encode(&new_salt),
-            new_keyfile.is_some(),
-        )
-    });
+        let new_key =
+            keypile_core::crypto::derive_key(&new_password, new_keyfile.as_deref(), &new_salt, &kdf)
+                .map_err(|e| e.to_string())?;
+        Ok((new_key, base64::engine::general_purpose::STANDARD.encode(&new_salt)))
+    })();
     wipe(&mut current_password, &mut new_password);
-    result
+    let (new_key, new_salt_b64) = derived?;
+    with_session(&st, |s| {
+        if s.path != path || !keypile_core::crypto::ct_eq(s.unlocked.key.as_slice(), live_key.as_slice()) {
+            return Err("Tresor ist gesperrt".into());
+        }
+        state::rekey(s, new_key, new_salt_b64, new_keyfile.is_some())
+    })
 }
 
 // ---------- updater ----------
@@ -1024,7 +1149,7 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Copy a field of an entry to the clipboard WITHOUT routing the secret
 /// through the frontend.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn copy_entry_field(
     app: tauri::AppHandle,
     st: State<'_, AppState>,
@@ -1032,7 +1157,7 @@ pub fn copy_entry_field(
     field: String,
 ) -> Result<(), String> {
     let text = with_session(&st, |s| {
-        let e = s.unlocked.vault.entry(id).ok_or("Eintrag nicht gefunden")?;
+        let e = find(&s.unlocked.vault, id)?;
         match field.as_str() {
             "username" => Ok(e.username.clone()),
             "password" => Ok(e.password.clone()),

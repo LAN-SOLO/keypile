@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, UpdateInfo } from '../api';
 import { useApp } from '../App';
 import { UpdateIcon } from '../icons';
+import { uiLocale } from '../keys';
 
 interface Props {
   info: UpdateInfo;
@@ -11,7 +12,7 @@ interface Props {
 /** Shown before installing an update: version, date and the changelog from
  *  the release notes. Install only starts after explicit confirmation. */
 export default function UpdateModal({ info, onClose }: Props) {
-  const { t, toast } = useApp();
+  const { t, toast, settings } = useApp();
   const [busy, setBusy] = useState(false);
 
   const install = async () => {
@@ -26,7 +27,10 @@ export default function UpdateModal({ info, onClose }: Props) {
     }
   };
 
-  const date = info.date ? new Date(info.date) : null;
+  // the updater reports "2026-10-01 12:00:00.0 +00:00:00" (time crate), which
+  // Date() cannot parse — only the calendar date is shown anyway
+  const ymd = info.date?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const date = ymd ? new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])) : null;
 
   return (
     <div className="overlay" onClick={busy ? undefined : onClose}>
@@ -42,7 +46,7 @@ export default function UpdateModal({ info, onClose }: Props) {
         <div className="mbody">
           {date && !Number.isNaN(date.getTime()) && (
             <div className="faint" style={{ marginBottom: 10 }}>
-              {t.publishedOn(date.toLocaleDateString())}
+              {t.publishedOn(date.toLocaleDateString(uiLocale(settings.language)))}
             </div>
           )}
           <div className="fieldlabel">{t.changelogTitle}</div>

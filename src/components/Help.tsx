@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { localizeShortcuts } from '../keys';
 
 // Selbstständiges Hilfe-System: schwebender ?-Button, First-Run-Tutorial
 // und durchsuchbares Handbuch. Sprache folgt der App-Einstellung.
@@ -164,6 +165,7 @@ const de: Content = {
       body: [
         'Hinterlege den 2FA-Schlüssel (das „Secret“ aus dem QR-Code) im Eintrag — als Base32 oder komplette otpauth://-URI. keypile zeigt den laufenden Code (meist 6-stellig; Stellen, Periode und SHA-1/256/512 übernimmt es aus der URI) mit Ablauf-Anzeige.',
         'Code kopieren: ein Klick. So liegen Passwort und zweiter Faktor beisammen — praktisch; wer maximale Trennung will, nutzt weiterhin eine separate Authenticator-App.',
+        'Unterstützt werden zeitbasierte Codes (otpauth://totp/, auch mit prozent-kodierten Werten wie %3D). Zählerbasierte HOTP-URIs lehnt keypile mit einer Meldung ab, statt falsche Codes anzuzeigen.',
         'TOTP startet als Teil von keypile unlocked und ist in der Testphase frei testbar.',
       ],
     },
@@ -181,7 +183,7 @@ const de: Content = {
       title: 'Import & Export',
       body: [
         '• Import — CSV-Exporte gängiger Passwortmanager und Browser einlesen, ebenso unverschlüsselte JSON-Exporte im Bitwarden-Format; keypile ordnet die Felder zu. Die Datei muss UTF-8-kodiert sein (mit oder ohne BOM)',
-        '• Export — den Tresor als CSV exportieren, etwa für einen Umzug',
+        '• Export — den Tresor als CSV exportieren, etwa für einen Umzug. Die Datei ist UTF-8 mit BOM, damit Excel unter Windows Umlaute richtig anzeigt',
         'Achtung beim Export: Die CSV ist unverschlüsselter Klartext. Nur auf sicheren Datenträgern ablegen und danach löschen.',
       ],
     },
@@ -191,6 +193,7 @@ const de: Content = {
       body: [
         'keypile braucht keinen eigenen Server: Lege die Tresor-Datei in einen synchronisierten Ordner (iCloud Drive, Dropbox, Google Drive, Nextcloud …) und öffne sie auf jedem Gerät.',
         'Ändert ein anderes Gerät die Datei, erkennt keypile das und führt die Stände zusammen; bei echten Konflikten wird nichts verworfen, sondern ein Konflikt-Eintrag angelegt.',
+        'Endgültig Gelöschtes (Papierkorb leeren, „Endgültig löschen“) bleibt als inhaltsleere Markierung im Tresor. So erreicht die Löschung auch die anderen Geräte, und der Eintrag kehrt beim nächsten Abgleich nicht zurück. Hat ein anderes Gerät den Eintrag in der Zwischenzeit bearbeitet, geht diese Bearbeitung nicht verloren.',
         'Zero-Knowledge bleibt gewahrt: Der Cloud-Anbieter sieht nur verschlüsselte Bytes.',
       ],
     },
@@ -200,9 +203,9 @@ const de: Content = {
       body: [
         '• Auto-Sperre — der Tresor sperrt sich nach einstellbarer Inaktivität (Standard 10 Minuten)',
         '• Sperren bei Fokusverlust — optional sofort beim Verlassen des Fensters (Datei- und Bestätigungsdialoge von keypile selbst lösen es nicht aus)',
-        '• Zwischenablage — kopierte Geheimnisse werden nach einstellbarer Zeit automatisch entfernt (Standard 30 Sekunden) und spätestens beim Sperren',
+        '• Zwischenablage — kopierte Geheimnisse werden nach einstellbarer Zeit automatisch entfernt (Standard 30 Sekunden) und spätestens beim Sperren oder Beenden von keypile',
         'Die Auto-Sperre greift auch nach Ruhezustand: Beim Aufwachen prüft keypile sofort, ob die Inaktivitätszeit überschritten ist.',
-        'Windows: Ist der Zwischenablage-Verlauf (Win+V) oder der geräteübergreifende Verlauf aktiv, legt Windows kopierte Secrets dort zusätzlich ab — das automatische Leeren erreicht diesen Verlauf nicht. Für Passwörter den Verlauf besser ausschalten (Einstellungen → System → Zwischenablage).',
+        'Zwischenablage-Verlauf: keypile markiert kopierte Geheimnisse als „nicht in den Verlauf“. Windows nimmt sie dann weder in den Verlauf (Win+V) noch in die geräteübergreifende Zwischenablage auf; unter macOS gilt das für Zwischenablage-Manager, die den nspasteboard-Standard beachten. Andere Verlaufs-Tools können Kopien trotzdem behalten.',
         '• Manuell sperren — jederzeit über den Sperren-Knopf',
         'Kryptografie: Argon2id als Schlüsselableitung, AES-256-GCM für die Daten. Format und Verfahren sind dokumentiert (FORMAT.md im Repo).',
         'Hinweis: Die Krypto ist offen dokumentiert und intern auditiert (AUDIT-1.0.md), aber noch nicht von einer externen Stelle geprüft.',
@@ -386,6 +389,7 @@ const en: Content = {
       body: [
         'Store the 2FA secret (the “secret” behind the QR code) in an entry — as Base32 or a full otpauth:// URI. keypile shows the running code (usually 6 digits; digits, period and SHA-1/256/512 are taken from the URI) with an expiry indicator.',
         'Copy the code with one click. Password and second factor live together — convenient; if you want maximum separation, keep using a separate authenticator app.',
+        'Time-based codes are supported (otpauth://totp/, including percent-encoded values such as %3D). Counter-based HOTP URIs are rejected with a message instead of showing wrong codes.',
         'TOTP launches as part of keypile unlocked and is free to test during the trial phase.',
       ],
     },
@@ -403,7 +407,7 @@ const en: Content = {
       title: 'Import & export',
       body: [
         '• Import — read CSV exports of common password managers and browsers, plus unencrypted JSON exports in Bitwarden format; keypile maps the fields. The file must be UTF-8 encoded (with or without BOM)',
-        '• Export — export the vault as CSV, e.g. for a migration',
+        '• Export — export the vault as CSV, e.g. for a migration. The file is UTF-8 with a BOM so Excel on Windows shows umlauts correctly',
         'Careful with exports: the CSV is unencrypted plain text. Keep it on safe media only and delete it afterwards.',
       ],
     },
@@ -413,6 +417,7 @@ const en: Content = {
       body: [
         'keypile needs no server of its own: put the vault file into a synced folder (iCloud Drive, Dropbox, Google Drive, Nextcloud …) and open it on any device.',
         'When another device changes the file, keypile notices and merges the states; on real conflicts nothing is discarded — a conflict entry is created instead.',
+        'Permanently deleted entries (empty trash, “Delete permanently”) stay in the vault as a content-free marker. That way the deletion reaches your other devices too, and the entry does not come back on the next merge. If another device edited the entry in the meantime, that edit is not lost.',
         'Zero-knowledge holds: your cloud provider only ever sees encrypted bytes.',
       ],
     },
@@ -422,9 +427,9 @@ const en: Content = {
       body: [
         '• Auto-lock — the vault locks after configurable inactivity (default 10 minutes)',
         '• Lock on blur — optionally the moment the window loses focus (keypile’s own file and confirmation dialogs don’t trigger it)',
-        '• Clipboard — copied secrets are cleared automatically after a configurable time (default 30 seconds) and at the latest when locking',
+        '• Clipboard — copied secrets are cleared automatically after a configurable time (default 30 seconds) and at the latest when locking or quitting keypile',
         'Auto-lock also covers sleep: on wake-up keypile immediately checks whether the inactivity time has passed.',
-        'Windows: if clipboard history (Win+V) or cross-device sync is on, Windows keeps its own copy of copied secrets there — the automatic clearing does not reach that history. For passwords, better turn it off (Settings → System → Clipboard).',
+        'Clipboard history: keypile flags copied secrets as “not for history”. Windows then keeps them out of the clipboard history (Win+V) and out of the cross-device clipboard; on macOS the same applies to clipboard managers that honour the nspasteboard convention. Other history tools may still keep copies.',
         '• Manual lock — anytime via the lock button',
         'Cryptography: Argon2id for key derivation, AES-256-GCM for the data. Format and procedures are documented (FORMAT.md in the repo).',
         'Note: the crypto is openly documented and internally audited (AUDIT-1.0.md), but has not yet been reviewed by an external party.',
@@ -485,15 +490,25 @@ export default function Help({ lang }: { lang: string }) {
     setHelpLang(lang === 'de' ? 'de' : 'en');
   }, [lang]);
   const c = helpLang === 'de' ? de : en;
-  const [mode, setMode] = useState<'closed' | 'tutorial' | 'manual'>(() =>
-    localStorage.getItem(SEEN_KEY) ? 'closed' : 'tutorial'
-  );
+  const [mode, setMode] = useState<'closed' | 'tutorial' | 'manual'>(() => {
+    try {
+      return localStorage.getItem(SEEN_KEY) ? 'closed' : 'tutorial';
+    } catch {
+      return 'tutorial';
+    }
+  });
+  // "⌘C" in the texts becomes "Strg+C" / "Ctrl+C" on Windows and Linux
+  const fx = (p: string) => localizeShortcuts(p, helpLang);
   const [step, setStep] = useState(0);
   const [sel, setSel] = useState(c.sections[0].id);
   const [q, setQ] = useState('');
 
   const close = () => {
-    localStorage.setItem(SEEN_KEY, '1');
+    try {
+      localStorage.setItem(SEEN_KEY, '1');
+    } catch {
+      /* ignore */
+    }
     setMode('closed');
     setStep(0);
   };
@@ -503,7 +518,7 @@ export default function Help({ lang }: { lang: string }) {
     ? c.sections.filter(
         (s) =>
           s.title.toLowerCase().includes(query) ||
-          s.body.some((p) => p.toLowerCase().includes(query))
+          s.body.some((p) => fx(p).toLowerCase().includes(query))
       )
     : c.sections;
   const current = filtered.find((s) => s.id === sel) ?? filtered[0] ?? null;
@@ -559,10 +574,10 @@ export default function Help({ lang }: { lang: string }) {
                 {c.tutorial[step].body.map((p, i) =>
                   p.startsWith('• ') ? (
                     <div key={i} className="hlp-li">
-                      {p.slice(2)}
+                      {fx(p.slice(2))}
                     </div>
                   ) : (
-                    <p key={i}>{p}</p>
+                    <p key={i}>{fx(p)}</p>
                   )
                 )}
                 <div className="hlp-tut-nav">
@@ -619,10 +634,10 @@ export default function Help({ lang }: { lang: string }) {
                       {current.body.map((p, i) =>
                         p.startsWith('• ') ? (
                           <div key={i} className="hlp-li">
-                            {p.slice(2)}
+                            {fx(p.slice(2))}
                           </div>
                         ) : (
-                          <p key={i}>{p}</p>
+                          <p key={i}>{fx(p)}</p>
                         )
                       )}
                     </>

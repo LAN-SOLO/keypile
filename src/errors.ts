@@ -28,6 +28,11 @@ const rules: Rule[] = [
     en: () => 'The vault file is corrupted or has been tampered with.',
   },
   {
+    re: /unsupported otpauth type/i,
+    de: () => 'Nur zeitbasierte Einmalcodes (otpauth://totp/) werden unterstützt — HOTP-Zähler-Codes nicht.',
+    en: () => 'Only time-based one-time codes (otpauth://totp/) are supported — HOTP counter codes are not.',
+  },
+  {
     re: /invalid TOTP secret/i,
     de: () => 'Ungültiges TOTP-Secret (Base32 oder otpauth://-URI erwartet).',
     en: () => 'Invalid TOTP secret (expected Base32 or an otpauth:// URI).',
@@ -69,6 +74,37 @@ const rules: Rule[] = [
     re: /nicht UTF-8-kodiert/,
     de: (m) => m.input ?? m[0],
     en: () => 'The file is not UTF-8 encoded — please export it as UTF-8 CSV.',
+  },
+  {
+    re: /^HIBP-Fehler: HTTP (.*)$/s,
+    de: (m) => `Have I Been Pwned meldet einen Fehler (HTTP ${m[1]}).`,
+    en: (m) => `Have I Been Pwned returned an error (HTTP ${m[1]}).`,
+  },
+  {
+    re: /^Zwischenablage nicht verfügbar: (.*)$/s,
+    de: (m) => `Die Zwischenablage ist gerade nicht verfügbar (${m[1]}) — bitte erneut versuchen.`,
+    en: (m) => `The clipboard is not available right now (${m[1]}) — please try again.`,
+  },
+  {
+    re: /^Interner Fehler: (.*)$/s,
+    de: (m) => m[0],
+    en: (m) => `Internal error: ${m[1]}`,
+  },
+  { re: /^Header beschädigt$/, de: () => 'Die Tresordatei ist beschädigt oder manipuliert.', en: () => 'The vault file is corrupted or has been tampered with.' },
+  {
+    re: /^Unbekanntes Feld '(.*)'$/,
+    de: (m) => m[0],
+    en: (m) => `Unknown field '${m[1]}'`,
+  },
+  {
+    re: /^crypto error: (.*)$/s,
+    de: (m) => `Kryptografie-Fehler: ${m[1]}`,
+    en: (m) => `Cryptography error: ${m[1]}`,
+  },
+  {
+    re: /^(i\/o error|serialization error): (.*)$/s,
+    de: (m) => `${m[1] === 'i/o error' ? 'Ein-/Ausgabefehler' : 'Daten konnten nicht gelesen werden'}: ${m[2]}`,
+    en: (m) => `${m[1] === 'i/o error' ? 'I/O error' : 'Could not read the data'}: ${m[2]}`,
   },
   {
     re: /^HIBP nicht erreichbar: (.*)$/s,

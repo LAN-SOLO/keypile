@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { api, Settings, UpdateInfo } from '../api';
 import { useApp } from '../App';
-import { baseName, confirmDialog, pickFile, pickSavePath } from '../dialogs';
+import { baseName, confirmDialog, pickFile, pickSavePath, withExtension } from '../dialogs';
 import StrengthMeter from './StrengthMeter';
 import { UpdateIcon } from '../icons';
 import UpdateModal from './UpdateModal';
@@ -45,12 +45,12 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const doImport = async () => {
-    const sel = await pickFile({
-      filters: [{ name: 'Import', extensions: ['csv', 'json'] }],
-    });
-    if (!sel) return;
     setBusy(true);
     try {
+      const sel = await pickFile({
+        filters: [{ name: 'Import', extensions: ['csv', 'json'] }],
+      });
+      if (!sel) return;
       const r = await api.importFile(sel);
       toast(t.importDone(r.added, r.skipped));
       await onVaultChanged();
@@ -62,14 +62,14 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
   };
 
   const doExport = async () => {
-    if (!(await confirmDialog(t.exportWarning))) return;
-    const sel = await pickSavePath({
-      defaultPath: 'keypile-export.csv',
-      filters: [{ name: 'CSV', extensions: ['csv'] }],
-    });
-    if (!sel) return;
     try {
-      const n = await api.exportCsv(sel);
+      if (!(await confirmDialog(t.exportWarning, { ok: t.exportBtn, cancel: t.cancel }))) return;
+      const sel = await pickSavePath({
+        defaultPath: 'keypile-export.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (!sel) return;
+      const n = await api.exportCsv(withExtension(sel, 'csv'));
       toast(t.exportDone(n));
     } catch (err) {
       toast(String(err), true);

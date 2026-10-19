@@ -52,6 +52,13 @@ fn main() {
             commands::export_csv_file,
             commands::change_master_password,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running keypile");
+        .build(tauri::generate_context!())
+        .expect("error while running keypile")
+        .run(|app, event| {
+            // a copied secret must not outlive the app (the auto-clear timer
+            // dies with the process)
+            if let tauri::RunEvent::Exit = event {
+                commands::clear_clipboard_if_ours(app);
+            }
+        });
 }

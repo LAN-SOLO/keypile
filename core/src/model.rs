@@ -156,8 +156,18 @@ pub struct Entry {
     pub deleted: bool,
     #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
+    /// Permanently deleted ("empty trash"): every field except id, dates and
+    /// the version vector is wiped, but the tombstone stays so the purge
+    /// replicates through sync instead of the entry coming back from another
+    /// device. UIs never show purged entries.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub purged: bool,
     #[serde(default)]
     pub vv: VersionVector,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Vault {
@@ -209,8 +219,51 @@ impl Entry {
             history: Vec::new(),
             deleted: false,
             deleted_at: None,
+            purged: false,
             vv: VersionVector::new(),
         }
+    }
+
+    /// Turn the entry into a purge tombstone: wipe all content (best effort
+    /// zeroize), keep id + version vector, and record the purge as an edit so
+    /// it dominates the copies other devices still hold.
+    pub fn purge(&mut self, device_id: &str) {
+        use zeroize::Zeroize;
+        self.title.zeroize();
+        self.username.zeroize();
+        self.password.zeroize();
+        self.notes.zeroize();
+        if let Some(t) = self.totp.as_mut() {
+            t.zeroize();
+        }
+        for f in self.custom_fields.iter_mut() {
+            f.name.zeroize();
+            f.value.zeroize();
+        }
+        for h in self.history.iter_mut() {
+            h.password.zeroize();
+        }
+        for a in self.attachments.iter_mut() {
+            a.data.zeroize();
+            a.name.zeroize();
+        }
+        self.folder = None;
+        self.urls.clear();
+        self.tags.clear();
+        self.totp = None;
+        self.custom_fields.clear();
+        self.history.clear();
+        self.attachments.clear();
+        self.passkey = None;
+        self.favorite = false;
+        self.archived = false;
+        self.password_changed = None;
+        self.deleted = true;
+        if self.deleted_at.is_none() {
+            self.deleted_at = Some(Utc::now());
+        }
+        self.purged = true;
+        self.touch(device_id);
     }
 
     /// Record an edit made on `device_id`: bump the version vector and timestamps.
