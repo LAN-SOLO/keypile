@@ -364,6 +364,11 @@ pub fn save_entry(
             }
         };
         state::persist(s)?;
+        // like get_entry: attachment bytes never travel to the UI
+        let mut entry = entry;
+        for a in &mut entry.attachments {
+            a.data = String::new();
+        }
         Ok(entry)
     })
 }

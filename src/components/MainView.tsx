@@ -337,6 +337,7 @@ export default function MainView() {
   const isActive = (f: Filter) => JSON.stringify(f) === JSON.stringify(filter);
   const item = (f: Filter, icon: JSX.Element, label: string, count?: number, badge?: string) => (
     <button
+      key={JSON.stringify(f)}
       className={`side-item${isActive(f) ? ' active' : ''}`}
       onClick={() => setFilter(f)}
     >

@@ -120,6 +120,9 @@ export default function EntryDetail(props: Props) {
         custom_fields: draft.custom_fields.filter((f) => f.name.trim() || f.value.trim()),
       });
       await props.onChanged(saved.id);
+      // editing an existing entry keeps this component mounted (same key) —
+      // reload so the view shows the saved state (history, fields, dates)
+      if (draft.id) await loadEntry(saved.id);
     } catch (err) {
       toast(String(err), true);
     }
