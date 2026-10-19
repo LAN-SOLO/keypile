@@ -66,14 +66,42 @@ fn settings_path(app: &tauri::AppHandle) -> PathBuf {
 /// "save settings" could overwrite each other.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn parse(path: &std::path::Path) -> Option<Settings> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
+enum Loaded {
+    Ok(Settings),
+    /// missing or not valid JSON: replacing it with defaults is safe
+    Replaceable,
+    /// exists but could not be read right now (Windows: antivirus/OneDrive
+    /// lock, sharing violation) — must NOT be overwritten, or the device id
+    /// and the recent list would be lost for good
+    Unreadable,
 }
 
+fn parse(path: &std::path::Path) -> Loaded {
+    let attempts = if cfg!(windows) { 5 } else { 1 };
+    for i in 0..attempts {
+        match std::fs::read_to_string(path) {
+            Ok(s) => {
+                return match serde_json::from_str(s.trim_start_matches('\u{feff}')) {
+                    Ok(v) => Loaded::Ok(v),
+                    Err(_) => Loaded::Replaceable,
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Loaded::Replaceable,
+            // a file that is not UTF-8 is garbage too
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Loaded::Replaceable,
+            Err(_) if i + 1 < attempts => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(_) => {}
+        }
+    }
+    Loaded::Unreadable
+}
+
+#[cfg(test)]
 fn read(path: &std::path::Path) -> Settings {
-    parse(path).unwrap_or_default()
+    match parse(path) {
+        Loaded::Ok(s) => s,
+        _ => Settings::default(),
+    }
 }
 
 /// Temp file + rename: a crash mid-write must not leave a truncated
@@ -91,15 +119,17 @@ pub fn load(app: &tauri::AppHandle) -> Settings {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = settings_path(app);
     match parse(&path) {
-        Some(s) => s,
-        None => {
-            // missing or unreadable: persist the defaults right away — the
+        Loaded::Ok(s) => s,
+        Loaded::Replaceable => {
+            // missing or broken: persist the defaults right away — the
             // random device id must stay the same across calls, or every edit
             // would count as another device
             let s = Settings::default();
             let _ = write(&path, &s);
             s
         }
+        // temporarily locked: work with defaults, keep the file untouched
+        Loaded::Unreadable => Settings::default(),
     }
 }
 
@@ -107,9 +137,15 @@ pub fn load(app: &tauri::AppHandle) -> Settings {
 pub fn update<T>(app: &tauri::AppHandle, f: impl FnOnce(&mut Settings) -> T) -> T {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = settings_path(app);
-    let mut s = read(&path);
+    let (mut s, writable) = match parse(&path) {
+        Loaded::Ok(s) => (s, true),
+        Loaded::Replaceable => (Settings::default(), true),
+        Loaded::Unreadable => (Settings::default(), false),
+    };
     let out = f(&mut s);
-    let _ = write(&path, &s);
+    if writable {
+        let _ = write(&path, &s);
+    }
     out
 }
 
@@ -174,6 +210,13 @@ mod tests {
         // a broken file falls back to defaults instead of crashing
         std::fs::write(&p, "{ nope").unwrap();
         assert_eq!(read(&p).auto_lock_minutes, 10);
+        assert!(matches!(parse(&p), Loaded::Replaceable));
+        assert!(matches!(parse(&dir.join("missing.json")), Loaded::Replaceable));
+        // exists but cannot be read (stands in for an AV/OneDrive lock):
+        // must not be classified as replaceable, or load() would overwrite it
+        let locked = dir.join("locked.json");
+        std::fs::create_dir_all(&locked).unwrap();
+        assert!(matches!(parse(&locked), Loaded::Unreadable));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

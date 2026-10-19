@@ -323,8 +323,8 @@ export default function MainView() {
   }, [selectedId]);
 
   const removeFolder = async (id: string) => {
-    if (!(await confirmDialog(t.confirmDeleteFolder, { ok: t.delete, cancel: t.cancel }))) return;
     try {
+      if (!(await confirmDialog(t.confirmDeleteFolder, { ok: t.delete, cancel: t.cancel }))) return;
       await api.deleteFolder(id);
       if (filter.kind === 'folder' && filter.id === id) setFilter({ kind: 'all' });
       await reload();
@@ -548,14 +548,14 @@ export default function MainView() {
                 <button
                   className="danger"
                   onClick={async () => {
-                    if (await confirmDialog(t.confirmEmptyTrash, { ok: t.emptyTrash, cancel: t.cancel })) {
-                      try {
-                        await api.emptyTrash();
-                        setSelectedId(null);
-                        await reload();
-                      } catch (err) {
-                        toast(String(err), true);
-                      }
+                    try {
+                      if (!(await confirmDialog(t.confirmEmptyTrash, { ok: t.emptyTrash, cancel: t.cancel })))
+                        return;
+                      await api.emptyTrash();
+                      setSelectedId(null);
+                      await reload();
+                    } catch (err) {
+                      toast(String(err), true);
                     }
                   }}
                 >

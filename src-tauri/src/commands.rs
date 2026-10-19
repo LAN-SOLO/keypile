@@ -1140,9 +1140,15 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("Update-Prüfung fehlgeschlagen: {e}"))?
         .ok_or("Kein Update verfügbar")?;
-    update
-        .download_and_install(|_, _| {}, || {})
+    let bytes = update
+        .download(|_, _| {}, || {})
         .await
+        .map_err(|e| format!("Update fehlgeschlagen: {e}"))?;
+    // On Windows the installer step ends the process via std::process::exit —
+    // RunEvent::Exit never fires there, so wipe a copied secret now.
+    clear_clipboard_if_ours(&app);
+    update
+        .install(bytes)
         .map_err(|e| format!("Update fehlgeschlagen: {e}"))?;
     app.restart();
 }

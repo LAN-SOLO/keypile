@@ -453,4 +453,50 @@ mod tests {
         assert!(path.with_extension("keypile.bak").exists());
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// Purge sync through the real file path: A empties the trash, B still
+    /// holds the trashed entry in memory and saves something else — the entry
+    /// must not come back, neither on disk nor in B's session; a third device
+    /// that re-opens the file sees only the tombstone (and no content).
+    #[test]
+    fn purge_survives_persist_on_other_device() {
+        let dir = tmpdir("purge");
+        let path = dir.join("v.keypile");
+        let mut v = Vault::new("t");
+        let mut e = Entry::new("old-site");
+        e.password = "s3cret-pw".into();
+        e.touch("A");
+        e.deleted = true;
+        e.touch("A");
+        let id = e.id;
+        v.entries.push(e);
+        let (bytes, _) = format::create(&v, "pw", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw");
+        let mut b = open_session(&path, "pw");
+
+        // A: empty trash (same as the empty_trash command)
+        for x in a.unlocked.vault.entries.iter_mut() {
+            if x.deleted && !x.purged {
+                x.purge("A");
+            }
+        }
+        persist(&mut a).unwrap();
+
+        // B: unrelated edit, saved on top of A's file
+        let mut nb = Entry::new("from-B");
+        nb.touch("B");
+        b.unlocked.vault.entries.push(nb);
+        let out = persist(&mut b).unwrap();
+        assert!(out.merged_external_changes);
+        assert_eq!(out.conflicts, 0);
+        let in_b = b.unlocked.vault.entry(id).unwrap();
+        assert!(in_b.purged && in_b.password.is_empty());
+
+        let c = open_session(&path, "pw");
+        let x = c.unlocked.vault.entry(id).unwrap();
+        assert!(x.purged && x.title.is_empty() && x.password.is_empty());
+        assert!(c.unlocked.vault.entries.iter().any(|e| e.title == "from-B"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

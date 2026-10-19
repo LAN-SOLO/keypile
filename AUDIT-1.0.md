@@ -299,3 +299,45 @@ TOTP-Prozentkodierung, CSV-BOM) wurde geprüft, korrigiert (u. a. ein Panic) und
 - Native Dialoge mit eigenen Knöpfen (TaskDialog unter Windows, NSAlert unter macOS), Esc/X = Abbrechen.
 - Echte Tauri-IPC mit async-Commands (Fenster bleibt während Argon2 bedienbar), Ruhezustand, OneDrive/AV-Sperren, UNC/USB-Pfade, WebView2-Kürzel mit deutscher Tastatur (AltGr), Drag & Drop in WebView2/WKWebView, Updater, Signatur/Notarisierung, SmartScreen.
 - Purge-Sync mit zwei echten Geräten über einen Cloud-Ordner.
+
+## 10. Runde 2 – Verifikation (unabhängige Zweitprüfung, 2026-10-20)
+
+Basis: `cdc82cc`. Diff `863cb3e..cdc82cc` gezielt auf Regressionen (plattformübergreifend, async/Races)
+gelesen, alle Prüfungen neu ausgeführt, L1–L13 an weiteren Stellen nachgeprüft.
+
+### Nachgebessert
+
+| Befund | Lösung |
+|---|---|
+| **Windows-Updater:** Der Installer-Schritt von `tauri-plugin-updater` beendet den Prozess unter Windows per `std::process::exit` (Quelle 2.10.1 geprüft). `RunEvent::Exit` feuert dort nie — ein kopiertes Secret blieb nach dem Update in der Zwischenablage (die Hilfe verspricht „spätestens beim Beenden“) | `install_update` lädt erst herunter (`download`), leert dann die Zwischenablage, wenn sie noch das Secret hält, und installiert danach (`install`). macOS: `app.restart()` aus dem async-Command feuert `Exit` regulär (Tauri 2.11.5 geprüft) |
+| **settings.json konnte verloren gehen:** `load()`/`update()` behandelten *jeden* Lesefehler wie „fehlt/kaputt“ und schrieben sofort Defaults zurück. Unter Windows (Virenscanner, OneDrive, Freigabeverletzung) hätte ein kurzer Lesefehler Geräte-ID und Zuletzt-Liste endgültig überschrieben | Unterscheidung: fehlt oder ungültiges JSON/kein UTF-8 → durch Defaults ersetzen (wie bisher); sonst (gesperrt) unter Windows 5× mit 100 ms erneut lesen, danach mit Defaults weiterarbeiten, **Datei aber nicht anfassen**. Test mit einem nicht lesbaren Pfad |
+| Ordner löschen und Papierkorb leeren: schlug der native Dialog selbst fehl, ging der Fehler als unbehandelte Promise verloren (L11) | Dialogaufruf innerhalb des try/catch → Toast |
+
+### Neue Tests
+
+- `state::purge_survives_persist_on_other_device`: Purge-Sync über die echte Datei — Gerät A leert den Papierkorb und speichert, Gerät B hält den Eintrag noch im Speicher und speichert etwas anderes darüber; der Eintrag kommt weder in B noch in der Datei zurück, ein drittes Öffnen sieht nur den inhaltsleeren Tombstone.
+- `settings::settings_file_roundtrip_with_bom_and_garbage` erweitert um „fehlt“/„kaputt“ (ersetzbar) vs. „nicht lesbar“ (nicht überschreiben).
+
+### Ausgeführt
+
+| Prüfung | Ergebnis |
+|---|---|
+| `cargo test --workspace` | Core 49/49, App 12/12 |
+| `cargo clippy --workspace --tests` | 0 Warnungen |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, Header-/Tool-Stubs, ohne Linken) | fehlerfrei (App-Crate nachweislich neu geprüft) |
+| `cargo audit` | unverändert gegenüber §9 (zip 4.6.1 über den Updater, glib nur Linux, unmaintained-Hinweise) |
+| `pnpm build`, `pnpm test` | fehlerfrei, 6/6 |
+| Headless-Chromium-Lauf aus §9 (gemockte IPC, 880 × 560, DE/EN × Dunkel/Hell × Windows/macOS) nach den Änderungen | 4 × 22 Schritte grün; Abbrechen bei Löschen/Papierkorb ändert nichts, Knopf-Labels in UI-Sprache |
+| L2-Sweep: alle Meldungs-Literale aus `src-tauri/src` und `core/src` (ohne Tests) durch `localizeError(…, 'en')` | keine deutsche Meldung in der EN-Ausgabe; unübersetzt bleiben nur englische Innentexte hinter übersetzten Präfixen und „state poisoned“ (nur nach einem Panic) |
+
+### Bestätigt / nicht widerlegt
+
+- L1: Plugin-JS 2.7.2 `confirm()` vergleicht das Ergebnis mit `okLabel`; Rust-Seite liefert bei `OkCancelCustom` das geklickte Label (unter Linux manuell gemappt), Esc/X → `Cancel`. Alle sechs Bestätigungen werden mit `await` und eigenen Labels aufgerufen; `dialog:default` enthält `allow-message`.
+- L5: rfd setzt unter Windows `SetDefaultExtension` aus dem ersten Filter und fragt beim Überschreiben nach; `withExtension()` greift damit praktisch nur unter Linux (GTK), wo ein bereits vorhandenes `name.csv` ohne Rückfrage überschrieben werden könnte — bewusst so belassen.
+- L6/L13/L7: wie in §9 beschrieben; Kürzel-Handler (`isModKey`) ist der einzige globale Tastatur-Handler.
+- Lockfile: `arboard` war bereits als transitive Abhängigkeit vorhanden, es kommen keine neuen Pakete hinzu.
+- Passwortwechsel ohne Session-Sperre: der Abschluss prüft Pfad **und** Schlüssel der Session; zwischenzeitliche Speicherungen (auch mit Merge) gehen in den Re-Key ein.
+
+### Weiterhin nur auf echter Hardware prüfbar
+
+Unverändert die Liste aus §9; zusätzlich: Zwischenablage nach einem Update unter Windows (NSIS und MSI) tatsächlich leer, und `settings.json` bleibt erhalten, wenn ein Virenscanner sie beim Start kurz sperrt.
