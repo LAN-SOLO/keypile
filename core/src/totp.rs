@@ -39,8 +39,12 @@ pub fn parse(input: &str) -> Result<TotpConfig> {
     if input.starts_with("otpauth://") {
         parse_otpauth(input)
     } else {
+        let secret = decode_base32(input)?;
+        if secret.is_empty() {
+            return Err(CoreError::Totp("empty secret".into()));
+        }
         Ok(TotpConfig {
-            secret: decode_base32(input)?,
+            secret,
             digits: 6,
             period: 30,
             algorithm: Algo::Sha1,
@@ -85,7 +89,10 @@ fn parse_otpauth(uri: &str) -> Result<TotpConfig> {
         }
     }
     let secret = secret.ok_or_else(|| CoreError::Totp("otpauth URI missing secret".into()))?;
-    if !(4..=10).contains(&digits) || period == 0 {
+    if secret.is_empty() {
+        return Err(CoreError::Totp("otpauth URI has an empty secret".into()));
+    }
+    if !(4..=10).contains(&digits) || period == 0 || period > 86_400 {
         return Err(CoreError::Totp("implausible digits/period".into()));
     }
     Ok(TotpConfig {
@@ -96,7 +103,7 @@ fn parse_otpauth(uri: &str) -> Result<TotpConfig> {
     })
 }
 
-fn hotp(config: &TotpConfig, counter: u64) -> u32 {
+fn hotp(config: &TotpConfig, counter: u64) -> u64 {
     let msg = counter.to_be_bytes();
     let digest: Vec<u8> = match config.algorithm {
         Algo::Sha1 => {
@@ -116,11 +123,12 @@ fn hotp(config: &TotpConfig, counter: u64) -> u32 {
         }
     };
     let offset = (digest[digest.len() - 1] & 0x0f) as usize;
-    let bin = ((digest[offset] as u32 & 0x7f) << 24)
-        | ((digest[offset + 1] as u32) << 16)
-        | ((digest[offset + 2] as u32) << 8)
-        | (digest[offset + 3] as u32);
-    bin % 10u32.pow(config.digits)
+    let bin = ((digest[offset] as u64 & 0x7f) << 24)
+        | ((digest[offset + 1] as u64) << 16)
+        | ((digest[offset + 2] as u64) << 8)
+        | (digest[offset + 3] as u64);
+    // u64: 10^10 (digits=10) overflows u32
+    bin % 10u64.pow(config.digits)
 }
 
 /// Current code + seconds until it rotates, for the given unix timestamp.
@@ -173,6 +181,38 @@ mod tests {
         assert_eq!(c.digits, 8);
         assert_eq!(c.period, 60);
         assert_eq!(c.algorithm, Algo::Sha256);
+    }
+
+    #[test]
+    fn ten_digits_do_not_overflow() {
+        let c = parse("otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=10").unwrap();
+        let (code, _) = code_at(&c, 59);
+        assert_eq!(code.len(), 10);
+    }
+
+    #[test]
+    fn sha256_sha512_vectors() {
+        // RFC 6238 Appendix B, 8 digits, t=59
+        let c256 = TotpConfig {
+            secret: b"12345678901234567890123456789012".to_vec(),
+            digits: 8,
+            period: 30,
+            algorithm: Algo::Sha256,
+        };
+        assert_eq!(code_at(&c256, 59).0, "46119246");
+        let c512 = TotpConfig {
+            secret: b"1234567890123456789012345678901234567890123456789012345678901234".to_vec(),
+            digits: 8,
+            period: 30,
+            algorithm: Algo::Sha512,
+        };
+        assert_eq!(code_at(&c512, 59).0, "90693936");
+    }
+
+    #[test]
+    fn rejects_empty_secret() {
+        assert!(parse("").is_err());
+        assert!(parse("otpauth://totp/x?secret=").is_err());
     }
 
     #[test]

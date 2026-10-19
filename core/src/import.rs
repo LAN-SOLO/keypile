@@ -42,6 +42,7 @@ pub struct ImportResult {
 /// Import CSV with a header row. Column meanings are auto-detected from the
 /// header names, so Chrome/KeePassXC/LastPass/Bitwarden/1Password CSVs all work.
 pub fn import_csv(data: &str, device_id: &str) -> Result<ImportResult> {
+    let data = strip_bom(data);
     let mut rdr = csv::ReaderBuilder::new()
         .flexible(true)
         .from_reader(data.as_bytes());
@@ -130,6 +131,13 @@ pub fn import_csv(data: &str, device_id: &str) -> Result<ImportResult> {
     })
 }
 
+/// Excel, 1Password and several Windows tools write a UTF-8 BOM; left in
+/// place it glues onto the first header ("\u{feff}name") and that column is
+/// silently dropped.
+fn strip_bom(data: &str) -> &str {
+    data.strip_prefix('\u{feff}').unwrap_or(data)
+}
+
 fn host_of(url: &str) -> String {
     url.trim_start_matches("https://")
         .trim_start_matches("http://")
@@ -141,7 +149,7 @@ fn host_of(url: &str) -> String {
 
 /// Import an unencrypted Bitwarden/Vaultwarden JSON export.
 pub fn import_bitwarden_json(data: &str, device_id: &str) -> Result<ImportResult> {
-    let root: Value = serde_json::from_str(data)
+    let root: Value = serde_json::from_str(strip_bom(data))
         .map_err(|e| CoreError::Import(format!("kein gültiges JSON: {e}")))?;
     if root.get("encrypted").and_then(Value::as_bool) == Some(true) {
         return Err(CoreError::Import(
@@ -309,6 +317,48 @@ mod tests {
         assert_eq!(r.folders.len(), 1);
         assert_eq!(r.folders[0].name, "Root/Work");
         assert_eq!(r.entries[0].totp.as_deref(), Some("JBSWY3DPEHPK3PXP"));
+    }
+
+    #[test]
+    fn csv_with_utf8_bom() {
+        let csv = "\u{feff}name,url,username,password\nGitHub,https://github.com,alice,pw\n";
+        let r = import_csv(csv, "dev").unwrap();
+        assert_eq!(r.entries[0].title, "GitHub");
+    }
+
+    #[test]
+    fn bitwarden_json_with_bom() {
+        let json = "\u{feff}{\"items\": [{\"type\": 2, \"name\": \"Note\", \"notes\": \"x\"}]}";
+        let r = import_bitwarden_json(json, "dev").unwrap();
+        assert_eq!(r.entries.len(), 1);
+    }
+
+    #[test]
+    fn onepassword_and_bitwarden_csv_headers() {
+        let op = "Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes\nMail,https://m.io,me,pw,otpauth://totp/x?secret=JBSWY3DPEHPK3PXP,true,false,,n\n";
+        let r = import_csv(op, "dev").unwrap();
+        assert_eq!(r.entries[0].username, "me");
+        assert!(r.entries[0].favorite);
+        assert!(r.entries[0].totp.is_some());
+        let bw = "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\nWork,1,login,Jira,,,0,https://j.io,bob,s3,\n";
+        let r = import_csv(bw, "dev").unwrap();
+        assert_eq!(r.entries[0].title, "Jira");
+        assert_eq!(r.entries[0].password, "s3");
+        assert_eq!(r.folders[0].name, "Work");
+    }
+
+    #[test]
+    fn export_quotes_special_characters() {
+        let mut vault = Vault::new("t");
+        let mut e = Entry::new("a,b \"quoted\"");
+        e.password = "p,w\n2".into();
+        e.notes = "line1\nline2".into();
+        vault.entries.push(e);
+        let out = export_csv(&vault).unwrap();
+        let re = import_csv(&out, "dev").unwrap();
+        assert_eq!(re.entries[0].title, "a,b \"quoted\"");
+        assert_eq!(re.entries[0].password, "p,w\n2");
+        assert_eq!(re.entries[0].notes, "line1\nline2");
     }
 
     #[test]

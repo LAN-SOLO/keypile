@@ -54,10 +54,22 @@ pub fn merge(local: &Vault, remote: &Vault) -> MergeResult {
     let mut conflicts = 0;
     let mut taken_remote = 0;
 
-    // --- folders: union by id ---
+    // --- folders: union by id; a dominating version vector carries renames
+    // and deletions across devices. Concurrent folder edits keep the local
+    // state (folders hold no secrets — entries are what must never be lost).
     for rf in &remote.folders {
-        if !out.folders.iter().any(|f| f.id == rf.id) {
-            out.folders.push(rf.clone());
+        match out.folders.iter_mut().find(|f| f.id == rf.id) {
+            None => out.folders.push(rf.clone()),
+            Some(lf) => match compare_vv(&lf.vv, &rf.vv) {
+                VvOrder::RightNewer => *lf = rf.clone(),
+                VvOrder::Concurrent => {
+                    for (d, c) in &rf.vv {
+                        let slot = lf.vv.entry(d.clone()).or_insert(0);
+                        *slot = (*slot).max(*c);
+                    }
+                }
+                VvOrder::Equal | VvOrder::LeftNewer => {}
+            },
         }
     }
 
@@ -178,6 +190,36 @@ mod tests {
         let r2 = merge(&r.vault, &remote);
         assert_eq!(r2.conflicts, 0);
         assert_eq!(r2.vault.entries.len(), 2);
+    }
+
+    #[test]
+    fn folder_rename_and_delete_propagate() {
+        use crate::model::Folder;
+        let base = Folder {
+            id: uuid::Uuid::new_v4(),
+            name: "Work".into(),
+            parent: None,
+            deleted: false,
+            vv: [("A".to_string(), 1u64)].into_iter().collect(),
+        };
+        let mut local = Vault::new("t");
+        local.folders.push(base.clone());
+        let mut remote = local.clone();
+        remote.folders[0].name = "Arbeit".into();
+        remote.folders[0].vv.insert("B".into(), 1);
+        let r = merge(&local, &remote);
+        assert_eq!(r.vault.folders.len(), 1);
+        assert_eq!(r.vault.folders[0].name, "Arbeit");
+
+        let mut remote_del = local.clone();
+        remote_del.folders[0].deleted = true;
+        remote_del.folders[0].vv.insert("A".into(), 2);
+        let r = merge(&local, &remote_del);
+        assert!(r.vault.folders[0].deleted);
+
+        // local newer → stays
+        let r = merge(&remote_del, &local);
+        assert!(r.vault.folders[0].deleted);
     }
 
     #[test]

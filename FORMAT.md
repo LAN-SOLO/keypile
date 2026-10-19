@@ -42,6 +42,12 @@ Formatversion größer als der eigenen einen Update-Hinweis zeigen (niemals
   Wiederverwendung wäre bei GCM katastrophal (Schlüssel-Rekonstruktion).
 - `keyfile`: rein informativ (UI-Hinweis, dass eine Schlüsseldatei nötig ist).
 
+Da der Header erst NACH der Schlüsselableitung authentifiziert ist, MÜSSEN
+Leser die KDF-Parameter vorab begrenzen (Schutz gegen präparierte Dateien, die
+viele GiB RAM oder Stunden Rechenzeit erzwingen). Referenz-Grenzen:
+`8192 ≤ m_kib ≤ 1048576` (8 MiB … 1 GiB), `1 ≤ t ≤ 64`, `1 ≤ p ≤ 16`;
+außerhalb → Datei wird als beschädigt abgelehnt.
+
 ## 3. Schlüsselableitung
 
 ```
@@ -134,13 +140,21 @@ pro Eintrag:
    angefügt. Die Versionsvektoren werden vereinigt, damit der Konflikt beim
    nächsten Merge nicht erneut aufschlägt. Niemals stilles Überschreiben.
 
+Ordner werden per ID vereinigt; dominiert der Versionsvektor eines Ordners,
+übernimmt der Merge dessen Namen und `deleted`-Flag (Umbenennen und Löschen
+synchronisieren so mit). Bei nebenläufigen Ordner-Änderungen bleibt der lokale
+Stand, die Vektoren werden vereinigt.
+
 Gelöschte Einträge bleiben als Tombstone (`deleted: true`) im Tresor, bis der
 Papierkorb geleert wird — sonst würden Löschungen beim Sync wiederauferstehen.
 
 ## 7. Speichern (Implementierungspflichten)
 
-- Atomar: Temp-Datei im Zielverzeichnis, dann `rename()`. Vorher `.keypile.bak`
-  der letzten Version anlegen.
+- Atomar: Temp-Datei im Zielverzeichnis schreiben und per `fsync` auf die
+  Platte bringen, dann `rename()`. Vorher `.keypile.bak` der letzten Version
+  anlegen. Nach einem Wechsel des Master-Passworts wird auch die `.bak` mit dem
+  neuen Schlüssel neu geschrieben (sonst bliebe dort eine mit dem alten
+  Passwort lesbare Kopie liegen).
 - Vor dem Schreiben prüfen, ob die Datei auf der Festplatte seit dem letzten
   eigenen Lesen/Schreiben verändert wurde (Hash-Vergleich). Wenn ja: externe
   Version mit dem Sitzungsschlüssel öffnen, mergen (Abschnitt 6), Ergebnis

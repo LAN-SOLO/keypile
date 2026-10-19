@@ -41,6 +41,47 @@ impl Default for KdfParams {
     }
 }
 
+/// Bounds for KDF parameters read from a (possibly hostile) vault header.
+/// The header is only authenticated AFTER the key is derived, so without
+/// these limits a crafted file could make the app allocate many GiB of RAM
+/// or spin for hours before the wrong-password error appears.
+pub const KDF_MIN_M_KIB: u32 = 8 * 1024;
+pub const KDF_MAX_M_KIB: u32 = 1024 * 1024;
+pub const KDF_MAX_T: u32 = 64;
+pub const KDF_MAX_P: u32 = 16;
+
+impl KdfParams {
+    /// Reject parameters outside the supported range (DoS guard + floor
+    /// against downgraded files).
+    pub fn validate(&self) -> Result<()> {
+        if self.algo != "argon2id" {
+            return Err(CoreError::Crypto(format!("unknown KDF '{}'", self.algo)));
+        }
+        if !(KDF_MIN_M_KIB..=KDF_MAX_M_KIB).contains(&self.m_kib)
+            || !(1..=KDF_MAX_T).contains(&self.t)
+            || !(1..=KDF_MAX_P).contains(&self.p)
+        {
+            return Err(CoreError::Corrupt(format!(
+                "unsupported KDF parameters (m={} KiB, t={}, p={})",
+                self.m_kib, self.t, self.p
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Constant-time equality for key material (no early exit on first mismatch).
+pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    std::hint::black_box(diff) == 0
+}
+
 pub const KEY_LEN: usize = 32;
 pub const NONCE_LEN: usize = 12;
 pub const SALT_LEN: usize = 16;
@@ -58,9 +99,7 @@ pub fn derive_key(
     salt: &[u8],
     params: &KdfParams,
 ) -> Result<Zeroizing<[u8; KEY_LEN]>> {
-    if params.algo != "argon2id" {
-        return Err(CoreError::Crypto(format!("unknown KDF '{}'", params.algo)));
-    }
+    params.validate()?;
     // Composite input: SHA256(SHA256(password) || SHA256(keyfile)).
     // Hashing the password first gives fixed-length input; the composite step
     // means neither factor alone can derive the key.
@@ -175,6 +214,29 @@ mod tests {
         let (nonce, mut ct) = encrypt(&key, b"secret", b"").unwrap();
         ct[0] ^= 0xff;
         assert!(decrypt(&key, &nonce, &ct, b"").is_err());
+    }
+
+    #[test]
+    fn kdf_bounds_enforced() {
+        let salt = random_bytes(SALT_LEN);
+        let huge = KdfParams { m_kib: 64 * 1024 * 1024, ..fast_params() };
+        assert!(derive_key("pw", None, &salt, &huge).is_err());
+        let tiny = KdfParams { m_kib: 64, ..fast_params() };
+        assert!(derive_key("pw", None, &salt, &tiny).is_err());
+        let slow = KdfParams { t: 10_000, ..fast_params() };
+        assert!(derive_key("pw", None, &salt, &slow).is_err());
+        let wide = KdfParams { p: 255, ..fast_params() };
+        assert!(derive_key("pw", None, &salt, &wide).is_err());
+        let other = KdfParams { algo: "scrypt".into(), ..fast_params() };
+        assert!(derive_key("pw", None, &salt, &other).is_err());
+        assert!(KdfParams::default().validate().is_ok());
+    }
+
+    #[test]
+    fn ct_eq_works() {
+        assert!(ct_eq(b"abc", b"abc"));
+        assert!(!ct_eq(b"abc", b"abd"));
+        assert!(!ct_eq(b"abc", b"ab"));
     }
 
     #[test]
