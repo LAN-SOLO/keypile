@@ -40,7 +40,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api.getSettings().then(setSettings);
+    api.getSettings().then(async (loaded) => {
+      // First run: the Rust default only looks at $LANG, which Windows does
+      // not set — take the language from the WebView (system locale) once.
+      let firstRun = false;
+      try {
+        firstRun = !localStorage.getItem('keypile.tutorialSeen') && !localStorage.getItem('keypile.langInit');
+        localStorage.setItem('keypile.langInit', '1');
+      } catch {
+        /* ignore */
+      }
+      const sysLang = navigator.language?.toLowerCase().startsWith('de') ? 'de' : 'en';
+      if (firstRun && loaded.language !== sysLang) {
+        setSettings(await api.setSettings({ ...loaded, language: sysLang }));
+      } else {
+        setSettings(loaded);
+      }
+    });
     refreshStatus();
     // silent update check on app start; when an update exists the changelog
     // dialog opens once (dismissable — buttons in sidebar/settings remain)
