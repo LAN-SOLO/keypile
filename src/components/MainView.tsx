@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, EntrySummary, Folder } from '../api';
 import { MOD } from '../keys';
 import { useApp } from '../App';
+import { confirmDialog } from '../dialogs';
 import EntryDetail from './EntryDetail';
 import GeneratorModal from './GeneratorModal';
 import SettingsModal from './SettingsModal';
@@ -323,6 +324,7 @@ export default function MainView() {
   }, [selectedId]);
 
   const removeFolder = async (id: string) => {
+    if (!(await confirmDialog(t.confirmDeleteFolder))) return;
     try {
       await api.deleteFolder(id);
       if (filter.kind === 'folder' && filter.id === id) setFilter({ kind: 'all' });
@@ -547,9 +549,13 @@ export default function MainView() {
                   className="danger"
                   onClick={async () => {
                     if (await confirmDialog(t.confirmEmptyTrash)) {
-                      await api.emptyTrash();
-                      setSelectedId(null);
-                      await reload();
+                      try {
+                        await api.emptyTrash();
+                        setSelectedId(null);
+                        await reload();
+                      } catch (err) {
+                        toast(String(err), true);
+                      }
                     }
                   }}
                 >
@@ -572,7 +578,3 @@ export default function MainView() {
   );
 }
 
-export async function confirmDialog(message: string): Promise<boolean> {
-  const { confirm } = await import('@tauri-apps/plugin-dialog');
-  return confirm(message);
-}

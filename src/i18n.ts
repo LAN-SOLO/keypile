@@ -251,6 +251,20 @@ const de = {
   unlockedBadge: 'unlocked',
   alphaPreviewNote:
     'unlocked-Feature — in der Alpha kostenlos testbar. Zum Start von unlocked wird es Teil des Abos.',
+  // 1.0 additions
+  defaultVaultName: 'Tresor',
+  forgetRecent: 'Aus der Liste entfernen',
+  planActive: 'AKTIV',
+  keyfileCurrent: 'Aktuelle Schlüsseldatei wählen (erforderlich)',
+  keyfileCurrentRequired: 'Bitte die aktuelle Schlüsseldatei wählen.',
+  keyfileNew: 'Neue Schlüsseldatei (optional)',
+  keyfileRemove: 'Schlüsseldatei entfernen (nur noch Passwort)',
+  keyfileKeepHint:
+    'Ohne neue Auswahl bleibt die aktuelle Schlüsseldatei in Gebrauch.',
+  keyfileAddHint:
+    'Optional: eine Schlüsseldatei als zweiten Faktor hinzufügen.',
+  confirmDeleteFolder:
+    'Ordner löschen? Die enthaltenen Einträge bleiben erhalten und landen ohne Ordner.',
 };
 
 const en: typeof de = {
@@ -486,6 +500,17 @@ const en: typeof de = {
   unlockedBadge: 'unlocked',
   alphaPreviewNote:
     'unlocked feature — free to test during the alpha. It becomes part of the subscription when unlocked launches.',
+  defaultVaultName: 'Vault',
+  forgetRecent: 'Remove from list',
+  planActive: 'ACTIVE',
+  keyfileCurrent: 'Choose current key file (required)',
+  keyfileCurrentRequired: 'Please choose the current key file.',
+  keyfileNew: 'New key file (optional)',
+  keyfileRemove: 'Remove key file (password only)',
+  keyfileKeepHint: 'Without a new selection the current key file stays in use.',
+  keyfileAddHint: 'Optional: add a key file as a second factor.',
+  confirmDeleteFolder:
+    'Delete this folder? Its entries are kept and end up without a folder.',
 };
 
 export const dictionaries: Record<Lang, typeof de> = { de, en };

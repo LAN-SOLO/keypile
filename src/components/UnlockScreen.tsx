@@ -1,14 +1,14 @@
 import { FormEvent, useState } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { save } from '@tauri-apps/plugin-dialog';
 import { api } from '../api';
+import { baseName, pickFile, pickSavePath } from '../dialogs';
+import { localizeError } from '../errors';
 import { useApp } from '../App';
 import StrengthMeter from './StrengthMeter';
 
 type Mode = 'home' | 'unlock' | 'create';
 
 export default function UnlockScreen() {
-  const { t, settings, refreshStatus, updateSettings } = useApp();
+  const { t, settings, refreshStatus, reloadSettings } = useApp();
   const [mode, setMode] = useState<Mode>('home');
   const [path, setPath] = useState('');
   const [name, setName] = useState('');
@@ -28,11 +28,10 @@ export default function UnlockScreen() {
   const pickVault = async (preset?: string) => {
     let file = preset;
     if (!file) {
-      const sel = await open({
-        multiple: false,
+      const sel = await pickFile({
         filters: [{ name: 'keypile', extensions: ['keypile'] }],
       });
-      if (typeof sel !== 'string') return;
+      if (!sel) return;
       file = sel;
     }
     setPath(file);
@@ -41,17 +40,18 @@ export default function UnlockScreen() {
   };
 
   const pickNewLocation = async () => {
-    const sel = await save({
-      defaultPath: `${name.trim() || 'Tresor'}.keypile`,
+    const sel = await pickSavePath({
+      defaultPath: `${name.trim() || t.defaultVaultName}.keypile`,
       filters: [{ name: 'keypile', extensions: ['keypile'] }],
     });
-    if (typeof sel === 'string') return sel;
-    return null;
+    if (!sel) return null;
+    // Linux/Windows dialogs don't always append the filter extension
+    return /\.keypile$/i.test(sel) ? sel : `${sel}.keypile`;
   };
 
   const pickKeyfile = async () => {
-    const sel = await open({ multiple: false });
-    if (typeof sel === 'string') setKeyfile(sel);
+    const sel = await pickFile();
+    if (sel) setKeyfile(sel);
   };
 
   const doUnlock = async (e: FormEvent) => {
@@ -61,8 +61,9 @@ export default function UnlockScreen() {
     try {
       await api.openVault(path, password, keyfile);
       await refreshStatus();
+      await reloadSettings();
     } catch (err) {
-      setError(String(err));
+      setError(localizeError(err, settings.language));
     } finally {
       setBusy(false);
       setPassword('');
@@ -83,16 +84,19 @@ export default function UnlockScreen() {
         setBusy(false);
         return;
       }
-      await api.createVault(file, name.trim() || 'Tresor', password, keyfile);
+      await api.createVault(file, name.trim() || t.defaultVaultName, password, keyfile);
       await refreshStatus();
+      await reloadSettings();
     } catch (err) {
-      setError(String(err));
+      setError(localizeError(err, settings.language));
       setBusy(false);
     }
   };
 
-  const forgetRecent = (p: string) =>
-    updateSettings({ recent_vaults: settings.recent_vaults.filter((r) => r !== p) });
+  const forgetRecent = async (p: string) => {
+    await api.forgetRecentVault(p);
+    await reloadSettings();
+  };
 
   return (
     <div className="unlock">
@@ -110,10 +114,10 @@ export default function UnlockScreen() {
               {settings.recent_vaults.map((p) => (
                 <div key={p} className="row" style={{ marginBottom: 6 }}>
                   <button className="recent-item" onClick={() => pickVault(p)}>
-                    {p.split('/').pop()}
+                    {baseName(p)}
                     <span className="path">{p}</span>
                   </button>
-                  <button className="ghost icon noflex" title="×" onClick={() => forgetRecent(p)}>
+                  <button className="ghost icon noflex" title={t.forgetRecent} onClick={() => forgetRecent(p)}>
                     ×
                   </button>
                 </div>
@@ -139,7 +143,7 @@ export default function UnlockScreen() {
 
       {mode === 'unlock' && (
         <form className="card" onSubmit={doUnlock}>
-          <h2 className="mono dim">{path.split('/').pop()}</h2>
+          <h2 className="mono dim">{baseName(path)}</h2>
           <label className="field">
             <span>{t.masterPassword}</span>
             <input
@@ -151,7 +155,7 @@ export default function UnlockScreen() {
           </label>
           <div className="row" style={{ marginBottom: 12 }}>
             <button type="button" className="ghost" onClick={pickKeyfile}>
-              {keyfile ? keyfile.split('/').pop() : t.keyfileOptional}
+              {keyfile ? baseName(keyfile) : t.keyfileOptional}
             </button>
             {keyfile && (
               <button type="button" className="ghost icon noflex" onClick={() => setKeyfile(null)}>
@@ -193,7 +197,7 @@ export default function UnlockScreen() {
           </label>
           <div className="row" style={{ marginBottom: 6 }}>
             <button type="button" className="ghost" onClick={pickKeyfile}>
-              {keyfile ? keyfile.split('/').pop() : t.keyfileOptional}
+              {keyfile ? baseName(keyfile) : t.keyfileOptional}
             </button>
             {keyfile && (
               <button type="button" className="ghost icon noflex" onClick={() => setKeyfile(null)}>

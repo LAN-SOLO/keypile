@@ -5,11 +5,15 @@ import UnlockScreen from './components/UnlockScreen';
 import MainView from './components/MainView';
 import UpdateModal from './components/UpdateModal';
 import Help from './components/Help';
+import { localizeError } from './errors';
+import { dialogActive } from './dialogs';
 
 interface AppCtx {
   t: Dict;
   settings: Settings;
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
+  /** re-read settings from disk (recent vaults change on open/create) */
+  reloadSettings: () => Promise<void>;
   toast: (msg: string, isError?: boolean) => void;
   status: Status;
   refreshStatus: () => Promise<void>;
@@ -29,7 +33,7 @@ export default function App() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const toastTimer = useRef<number>(0);
-  const lockTimer = useRef<number>(0);
+  const lastActivity = useRef<number>(Date.now());
 
   const refreshStatus = useCallback(async () => {
     setStatus(await api.vaultStatus());
@@ -49,22 +53,32 @@ export default function App() {
       .catch(() => {});
   }, [refreshStatus]);
 
-  const toast = useCallback((msg: string, isError = false) => {
-    setToastMsg({ msg, err: isError });
+  const lang = settings?.language === 'de' ? 'de' : 'en';
+  const toast = useCallback(
+    (msg: string, isError = false) => {
+      setToastMsg({ msg: isError ? localizeError(msg, lang) : msg, err: isError });
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToastMsg(null), 3500);
+      toastTimer.current = window.setTimeout(() => setToastMsg(null), isError ? 6000 : 3500);
+    },
+    [lang]
+  );
+
+  const reloadSettings = useCallback(async () => {
+    setSettings(await api.getSettings());
   }, []);
 
   const lock = useCallback(async () => {
     await api.lockVault();
     await refreshStatus();
-  }, [refreshStatus]);
+    await reloadSettings();
+  }, [refreshStatus, reloadSettings]);
 
   const updateSettings = useCallback(
     async (patch: Partial<Settings>) => {
       const next = { ...settings!, ...patch };
       setSettings(next);
-      await api.setSettings(next);
+      // the backend owns recent_vaults/device_id and returns the stored state
+      setSettings(await api.setSettings(next));
     },
     [settings]
   );
@@ -82,31 +96,44 @@ export default function App() {
     }
   }, [settings]);
 
-  // auto-lock on inactivity
+  // auto-lock on inactivity — compares wall-clock timestamps instead of one
+  // long setTimeout, which pauses while the machine sleeps and would keep the
+  // vault open for the full period again after wake-up
+  const autoLockMinutes = settings?.auto_lock_minutes ?? 0;
+  const unlocked = !!status && !status.locked;
   useEffect(() => {
-    if (!settings || !status || status.locked) return;
-    const reset = () => {
-      window.clearTimeout(lockTimer.current);
-      if (settings.auto_lock_minutes > 0) {
-        lockTimer.current = window.setTimeout(lock, settings.auto_lock_minutes * 60_000);
-      }
+    if (!unlocked || autoLockMinutes <= 0) return;
+    lastActivity.current = Date.now();
+    const touch = () => {
+      lastActivity.current = Date.now();
     };
-    reset();
-    const events = ['pointermove', 'keydown', 'pointerdown'] as const;
-    events.forEach((e) => window.addEventListener(e, reset));
+    const check = () => {
+      if (Date.now() - lastActivity.current >= autoLockMinutes * 60_000) lock();
+    };
+    const events = ['pointermove', 'keydown', 'pointerdown', 'wheel'] as const;
+    events.forEach((e) => window.addEventListener(e, touch, { passive: true }));
+    const timer = window.setInterval(check, 5_000);
+    // after sleep/wake or switching back to the window: check right away
+    document.addEventListener('visibilitychange', check);
+    window.addEventListener('focus', check);
     return () => {
-      window.clearTimeout(lockTimer.current);
-      events.forEach((e) => window.removeEventListener(e, reset));
+      window.clearInterval(timer);
+      events.forEach((e) => window.removeEventListener(e, touch));
+      document.removeEventListener('visibilitychange', check);
+      window.removeEventListener('focus', check);
     };
-  }, [settings, status, lock]);
+  }, [unlocked, autoLockMinutes, lock]);
 
-  // lock on blur
+  // lock on blur (not while one of our own native dialogs has the focus)
+  const lockOnBlur = !!settings?.lock_on_blur;
   useEffect(() => {
-    if (!settings?.lock_on_blur || !status || status.locked) return;
-    const onBlur = () => lock();
+    if (!lockOnBlur || !unlocked) return;
+    const onBlur = () => {
+      if (!dialogActive()) lock();
+    };
     window.addEventListener('blur', onBlur);
     return () => window.removeEventListener('blur', onBlur);
-  }, [settings, status, lock]);
+  }, [lockOnBlur, unlocked, lock]);
 
   if (!settings || !status) return null;
   const t = dictionaries[settings.language] ?? dictionaries.en;
@@ -117,6 +144,7 @@ export default function App() {
         t,
         settings,
         updateSettings,
+        reloadSettings,
         toast,
         status,
         refreshStatus,

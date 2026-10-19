@@ -40,8 +40,12 @@ export default function GeneratorModal({ onClose, onPick }: Props) {
   }, [regenerate]);
 
   const copy = async () => {
-    await api.copySecret(output);
-    toast(t.copied);
+    try {
+      await api.copySecret(output);
+      toast(t.copied);
+    } catch (err) {
+      toast(String(err), true);
+    }
   };
 
   return (

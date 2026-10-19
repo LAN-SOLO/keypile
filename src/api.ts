@@ -180,7 +180,8 @@ export interface ImportResult {
 
 export const api = {
   getSettings: () => invoke<Settings>('get_settings'),
-  setSettings: (newSettings: Settings) => invoke<void>('set_settings', { newSettings }),
+  setSettings: (newSettings: Settings) => invoke<Settings>('set_settings', { newSettings }),
+  forgetRecentVault: (path: string) => invoke<Settings>('forget_recent_vault', { path }),
   createVault: (path: string, name: string, password: string, keyfilePath: string | null) =>
     invoke<Status>('create_vault', { path, name, password, keyfilePath }),
   openVault: (path: string, password: string, keyfilePath: string | null) =>

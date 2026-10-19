@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, Audit, EntrySummary, PwnedHit } from '../api';
 import { useApp } from '../App';
 import UnlockedBadge from './UnlockedBadge';
+import { localizeError } from '../errors';
 import { ClockIcon, PaperclipIcon, PasskeyIcon, ShieldIcon, TimerIcon, WarnIcon } from '../icons';
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
 type Drill = { title: string; ids: string[] } | null;
 
 export default function AuditView({ entries, onSelect }: Props) {
-  const { t } = useApp();
+  const { t, settings, toast } = useApp();
   const [audit, setAudit] = useState<Audit | null>(null);
   const [pwned, setPwned] = useState<PwnedHit[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -20,7 +21,11 @@ export default function AuditView({ entries, onSelect }: Props) {
   const [drill, setDrill] = useState<Drill>(null);
 
   useEffect(() => {
-    api.auditReport().then(setAudit);
+    api
+      .auditReport()
+      .then(setAudit)
+      .catch((err) => toast(String(err), true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries]);
 
   const titleOf = useMemo(() => {
@@ -34,7 +39,7 @@ export default function AuditView({ entries, onSelect }: Props) {
     try {
       setPwned(await api.checkPwned());
     } catch (err) {
-      setPwnedError(String(err));
+      setPwnedError(localizeError(err, settings.language));
     } finally {
       setChecking(false);
     }

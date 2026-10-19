@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { open, save } from '@tauri-apps/plugin-dialog';
 import { getVersion } from '@tauri-apps/api/app';
 import { api, Settings, UpdateInfo } from '../api';
 import { useApp } from '../App';
-import { confirmDialog } from './MainView';
+import { baseName, confirmDialog, pickFile, pickSavePath } from '../dialogs';
 import StrengthMeter from './StrengthMeter';
 import { UpdateIcon } from '../icons';
 import UpdateModal from './UpdateModal';
@@ -18,6 +17,11 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [newPw2, setNewPw2] = useState('');
+  // key files for the master-password change: the current one is required
+  // when the vault uses one; the new one is kept by default
+  const [curKeyfile, setCurKeyfile] = useState<string | null>(null);
+  const [newKeyfile, setNewKeyfile] = useState<string | null>(null);
+  const [dropKeyfile, setDropKeyfile] = useState(false);
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState('');
   const [update, setUpdate] = useState<UpdateInfo | null | 'unchecked'>('unchecked');
@@ -41,11 +45,10 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const doImport = async () => {
-    const sel = await open({
-      multiple: false,
+    const sel = await pickFile({
       filters: [{ name: 'Import', extensions: ['csv', 'json'] }],
     });
-    if (typeof sel !== 'string') return;
+    if (!sel) return;
     setBusy(true);
     try {
       const r = await api.importFile(sel);
@@ -60,11 +63,11 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
 
   const doExport = async () => {
     if (!(await confirmDialog(t.exportWarning))) return;
-    const sel = await save({
+    const sel = await pickSavePath({
       defaultPath: 'keypile-export.csv',
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     });
-    if (typeof sel !== 'string') return;
+    if (!sel) return;
     try {
       const n = await api.exportCsv(sel);
       toast(t.exportDone(n));
@@ -78,13 +81,23 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
       toast(t.passwordsDontMatch, true);
       return;
     }
+    if (status.uses_keyfile && !curKeyfile) {
+      toast(t.keyfileCurrentRequired, true);
+      return;
+    }
+    // keep the current key file unless a new one was picked or removal chosen
+    const nextKeyfile = dropKeyfile ? null : newKeyfile ?? (status.uses_keyfile ? curKeyfile : null);
     setBusy(true);
     try {
-      await api.changeMasterPassword(currentPw, newPw, null, null);
+      await api.changeMasterPassword(currentPw, newPw, curKeyfile, nextKeyfile);
       toast(t.changed);
       setCurrentPw('');
       setNewPw('');
       setNewPw2('');
+      setCurKeyfile(null);
+      setNewKeyfile(null);
+      setDropKeyfile(false);
+      await onVaultChanged();
     } catch (err) {
       toast(String(err), true);
     } finally {
@@ -107,7 +120,7 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
             <div className="plan-card active-plan">
               <div className="pname">
                 {t.planFree}
-                <span className="tag">AKTIV</span>
+                <span className="tag">{t.planActive}</span>
               </div>
               <p>{t.planFreeDesc}</p>
             </div>
@@ -218,9 +231,64 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
               <span>{t.masterPasswordRepeat}</span>
               <input type="password" value={newPw2} onChange={(e) => setNewPw2(e.target.value)} />
             </label>
+            {status.uses_keyfile && (
+              <div className="row" style={{ marginBottom: 8 }}>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={async () => setCurKeyfile(await pickFile())}
+                >
+                  {curKeyfile ? baseName(curKeyfile) : t.keyfileCurrent}
+                </button>
+              </div>
+            )}
+            <div className="row" style={{ marginBottom: 6 }}>
+              <button
+                type="button"
+                className="ghost"
+                disabled={dropKeyfile}
+                onClick={async () => {
+                  const sel = await pickFile();
+                  if (sel) setNewKeyfile(sel);
+                }}
+              >
+                {newKeyfile ? baseName(newKeyfile) : t.keyfileNew}
+              </button>
+              {newKeyfile && (
+                <button
+                  type="button"
+                  className="ghost icon noflex"
+                  onClick={() => setNewKeyfile(null)}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {status.uses_keyfile && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={dropKeyfile}
+                  onChange={(e) => {
+                    setDropKeyfile(e.target.checked);
+                    if (e.target.checked) setNewKeyfile(null);
+                  }}
+                />
+                {t.keyfileRemove}
+              </label>
+            )}
+            <div className="faint" style={{ marginBottom: 10 }}>
+              {status.uses_keyfile ? t.keyfileKeepHint : t.keyfileAddHint}
+            </div>
             <button
               className="primary"
-              disabled={busy || !currentPw || newPw.length < 8 || !newPw2}
+              disabled={
+                busy ||
+                !currentPw ||
+                newPw.length < 8 ||
+                !newPw2 ||
+                (status.uses_keyfile && !curKeyfile)
+              }
               onClick={doChangeMaster}
             >
               {t.changeMaster}

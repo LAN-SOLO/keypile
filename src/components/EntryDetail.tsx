@@ -4,9 +4,10 @@ import { useApp } from '../App';
 import StrengthMeter from './StrengthMeter';
 import GeneratorModal from './GeneratorModal';
 import UnlockedBadge from './UnlockedBadge';
-import { confirmDialog } from './MainView';
+import { confirmDialog, pickFile, pickSavePath } from '../dialogs';
 import { Category, TEMPLATES, normalizeCategory, parseTemplateField } from '../templates';
 import { MOD } from '../keys';
+import { localizeError } from '../errors';
 import { ArchiveIcon, CategoryIcon, PaperclipIcon } from '../icons';
 
 interface Props {
@@ -101,10 +102,11 @@ export default function EntryDetail(props: Props) {
     }
   };
 
-  const copyText = async (text: string) => {
-    await api.copySecret(text);
-    toast(t.copied);
-  };
+  const copyText = (text: string) =>
+    run(async () => {
+      await api.copySecret(text);
+      toast(t.copied);
+    });
 
   const save = async () => {
     if (!draft.title.trim()) return;
@@ -123,37 +125,49 @@ export default function EntryDetail(props: Props) {
     }
   };
 
-  const remove = async () => {
-    if (!entry) return;
-    if (!(await confirmDialog(t.confirmDelete))) return;
-    await api.deleteEntry(entry.id);
-    await props.onChanged(null);
+  const run = async (fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err) {
+      toast(String(err), true);
+    }
   };
 
-  const purge = async () => {
-    if (!entry) return;
-    if (!(await confirmDialog(t.confirmPurge))) return;
-    await api.purgeEntry(entry.id);
-    await props.onChanged(null);
-  };
+  const remove = () =>
+    run(async () => {
+      if (!entry) return;
+      if (!(await confirmDialog(t.confirmDelete))) return;
+      await api.deleteEntry(entry.id);
+      await props.onChanged(null);
+    });
 
-  const restore = async () => {
-    if (!entry) return;
-    await api.restoreEntry(entry.id);
-    await props.onChanged(entry.id);
-  };
+  const purge = () =>
+    run(async () => {
+      if (!entry) return;
+      if (!(await confirmDialog(t.confirmPurge))) return;
+      await api.purgeEntry(entry.id);
+      await props.onChanged(null);
+    });
 
-  const toggleArchive = async () => {
-    if (!entry) return;
-    await api.setArchived(entry.id, !entry.archived);
-    await props.onChanged(entry.id);
-  };
+  const restore = () =>
+    run(async () => {
+      if (!entry) return;
+      await api.restoreEntry(entry.id);
+      await props.onChanged(entry.id);
+    });
+
+  const toggleArchive = () =>
+    run(async () => {
+      if (!entry) return;
+      await api.setArchived(entry.id, !entry.archived);
+      await props.onChanged(entry.id);
+      await loadEntry(entry.id);
+    });
 
   const addAttachment = async () => {
     if (!entry) return;
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const sel = await open({ multiple: false });
-    if (typeof sel !== 'string') return;
+    const sel = await pickFile();
+    if (!sel) return;
     try {
       const updated = await api.addAttachment(entry.id, sel);
       setEntry(updated);
@@ -165,9 +179,8 @@ export default function EntryDetail(props: Props) {
 
   const saveAttachment = async (attId: string, name: string) => {
     if (!entry) return;
-    const { save: saveDialog } = await import('@tauri-apps/plugin-dialog');
-    const sel = await saveDialog({ defaultPath: name });
-    if (typeof sel !== 'string') return;
+    const sel = await pickSavePath({ defaultPath: name });
+    if (!sel) return;
     try {
       await api.saveAttachment(entry.id, attId, sel);
       toast('✓');
@@ -817,7 +830,8 @@ function CustomFieldView({ field, onCopy }: { field: CustomField; onCopy: () => 
 }
 
 function TotpBlock({ entryId, onCopy }: { entryId: string; onCopy: () => void }) {
-  const { t } = useApp();
+  const { t, settings } = useApp();
+  const lang = settings.language;
   const [code, setCode] = useState<{ code: string; remaining: number } | null>(null);
   const [error, setError] = useState('');
 
@@ -827,7 +841,7 @@ function TotpBlock({ entryId, onCopy }: { entryId: string; onCopy: () => void })
       api
         .totpCode(entryId)
         .then((c) => alive && setCode(c))
-        .catch((e) => alive && setError(String(e)));
+        .catch((e) => alive && setError(localizeError(e, lang)));
     tick();
     const id = window.setInterval(tick, 1000);
     return () => {
