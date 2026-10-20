@@ -129,7 +129,7 @@ fn session_tx<T>(
 ) -> Result<T, String> {
     let mut before = s.unlocked.vault.clone();
     let r = f(s);
-    if r.is_err() {
+    if matches!(&r, Err(e) if !e.starts_with(state::FOREIGN_KEY_MSG)) {
         std::mem::swap(&mut s.unlocked.vault, &mut before);
     }
     // whichever copy is no longer used still holds secrets
@@ -1292,6 +1292,41 @@ mod tests {
         let disk = format::open(&std::fs::read(&path).unwrap(), "pw", None).unwrap();
         assert_eq!(disk.vault.entries.iter().filter(|e| e.title == "Bank").count(), 1);
         assert_eq!(s.unlocked.vault.entries.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Re-keyed elsewhere: the change went into the conflict copy and must
+    /// stay in memory, so a second change lands in the conflict copy too.
+    #[test]
+    fn foreign_key_conflict_is_not_rolled_back() {
+        use keypile_core::crypto::KdfParams;
+        use keypile_core::format;
+        let dir = std::env::temp_dir().join(format!("kp-txfk-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.keypile");
+        let kdf = || KdfParams { algo: "argon2id".into(), m_kib: 8 * 1024, t: 1, p: 1 };
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut s = Session {
+            path: path.clone(),
+            unlocked: format::open(&bytes, "pw", None).unwrap(),
+            disk_hash: state::file_hash(&bytes),
+            conflict_label: state::conflict_label("de"),
+        };
+        // another device changes the master password
+        let (other, _) = format::create(&Vault::new("t"), "anderes", None, kdf()).unwrap();
+        std::fs::write(&path, &other).unwrap();
+        let add = |title: &'static str| move |s: &mut Session| {
+            s.unlocked.vault.entries.push(Entry::new(title));
+            state::persist(s).map(|_| ())
+        };
+        let e = session_tx(&mut s, add("eins")).unwrap_err();
+        assert!(e.starts_with(state::FOREIGN_KEY_MSG), "{e}");
+        session_tx(&mut s, add("zwei")).unwrap_err();
+        let copy = std::fs::read(dir.join("v (Konflikt).keypile")).unwrap();
+        let v = format::open(&copy, "pw", None).unwrap().vault;
+        let titles: Vec<_> = v.entries.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["eins", "zwei"]);
         std::fs::remove_dir_all(&dir).ok();
     }
 

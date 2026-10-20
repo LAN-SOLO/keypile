@@ -139,6 +139,12 @@ pub fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     Err(last.unwrap_or_else(|| std::io::Error::other("rename failed")))
 }
 
+/// Start of the error when the file on disk was re-keyed elsewhere. The
+/// session's version then lives in the conflict copy — callers must keep it
+/// in memory (no rollback), or the next attempt would overwrite that copy
+/// with a vault that lacks the change.
+pub const FOREIGN_KEY_MSG: &str = "Die Vault-Datei wurde extern mit anderem Schlüssel geändert.";
+
 #[derive(Debug)]
 pub struct PersistOutcome {
     pub merged_external_changes: bool,
@@ -189,8 +195,7 @@ pub fn persist(session: &mut Session) -> Result<PersistOutcome, String> {
                             .map_err(|e| e.to_string())?;
                             atomic_write(&alt, &bytes).map_err(|e| e.to_string())?;
                             return Err(format!(
-                                "Die Vault-Datei wurde extern mit anderem Schlüssel geändert. \
-                                 Deine Version wurde als '{}' gesichert.",
+                                "{FOREIGN_KEY_MSG} Deine Version wurde als '{}' gesichert.",
                                 alt.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                             ));
                         }

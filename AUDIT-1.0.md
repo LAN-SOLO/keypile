@@ -374,7 +374,7 @@ Kürzel ⌘/Strg C/B/T/U/E/N/F/G/,/L und ↑/↓, Hell/Dunkel inkl. Entsperr-Bil
 |---|---|
 | **CSV-Formel-Injection** (Leftover R2) | Textzellen (Ordner, Titel, Benutzer, URL, Notizen), die mit `=` `+` `-` `@` Tab oder CR beginnen, bekommen ein `'`. Passwort/TOTP bleiben byte-genau — ein Präfix würde beim Umzug in einen anderen Manager falsche Secrets importieren (der Generator erzeugt selbst Passwörter mit `=+-@`). Der keypile-Import entfernt genau ein `'` vor einem dieser Zeichen. Test `export_guards_formula_cells_but_keeps_secrets_exact` |
 | CSV-Import trimmte Passwörter (`"  pw "` → `"pw"`) → stiller Aussperr-Fall | Passwortspalte wird unverändert übernommen (Test s. o.) |
-| **Fehlgeschlagenes Speichern ließ die Änderung im Speicher** (schreibgeschützter Ordner, Datenträger voll, gesperrte Datei): Das Formular blieb offen, erneutes „Speichern“ legte einen **neuen Eintrag doppelt** an; ebenso Import, neuer Ordner, Anhang | `with_session_tx`: Bei Fehler wird der Tresor im Speicher auf den Stand vor dem Befehl zurückgesetzt (Kopie danach gewipt) — Speicher = letzte gültige Datei, Wiederholen erzeugt keine Duplikate; extern zusammengeführte Änderungen werden beim nächsten Speichern erneut gemergt. Gilt für alle elf speichernden Commands (Eintrag speichern, löschen, wiederherstellen, endgültig löschen, Papierkorb leeren, archivieren, Anhang hinzufügen/entfernen, Ordner anlegen/löschen, Import). Test `failed_save_rolls_back_so_retry_creates_no_duplicate` |
+| **Fehlgeschlagenes Speichern ließ die Änderung im Speicher** (schreibgeschützter Ordner, Datenträger voll, gesperrte Datei): Das Formular blieb offen, erneutes „Speichern“ legte einen **neuen Eintrag doppelt** an; ebenso Import, neuer Ordner, Anhang | `with_session_tx`: Bei Fehler wird der Tresor im Speicher auf den Stand vor dem Befehl zurückgesetzt (Kopie danach gewipt) — Speicher = letzte gültige Datei, Wiederholen erzeugt keine Duplikate; extern zusammengeführte Änderungen werden beim nächsten Speichern erneut gemergt. Gilt für alle elf speichernden Commands (Eintrag speichern, löschen, wiederherstellen, endgültig löschen, Papierkorb leeren, archivieren, Anhang hinzufügen/entfernen, Ordner anlegen/löschen, Import). Ausnahme: Datei wurde anderswo neu verschlüsselt — dann liegt die Änderung in der Konflikt-Kopie und bleibt im Speicher, sonst würde der nächste Versuch die Kopie ohne sie überschreiben. Tests `failed_save_rolls_back_so_retry_creates_no_duplicate`, `foreign_key_conflict_is_not_rolled_back` |
 | Datenträger voll: halb geschriebene `.v.keypile.tmp` blieb liegen; ein abgebrochenes Kopieren hinterließ eine **abgeschnittene `.bak`**, die wie eine gültige Sicherung aussah | Temp-Datei wird bei Schreibfehler entfernt; `.bak` mit falscher Länge wird gelöscht (eine intakte ältere `.bak` bleibt) |
 | Datenträger voll beim CSV-Export / „Anhang speichern unter“: **unvollständige Klartextdatei blieb liegen** | `write_user_file`: bei Fehler nach dem Anlegen wird die Teildatei gelöscht; lässt sich das Ziel nicht öffnen (schreibgeschützt/gesperrt), bleibt es unangetastet. CSV-Puffer und Anhang-Bytes werden danach zeroized |
 | Neuer Unterordner „Arbeit/Kunden“ blieb unsichtbar (Elternknoten zugeklappt) | Elternkette wird beim Anlegen aufgeklappt |
@@ -423,12 +423,13 @@ Dateisystem-Fehlerfälle als Rust-Tests gegen echte Dateien:
 | `commands::disk_full_export_leaves_no_partial_file` (`#[ignore]`) | Export auf vollen Datenträger: keine Teildatei — ausgeführt, grün |
 | `commands::user_file_untouched_when_target_not_writable` | Export auf schreibgeschützte Zieldatei: Inhalt bleibt |
 | `commands::failed_save_rolls_back_so_retry_creates_no_duplicate` | Rollback + Wiederholung ohne Duplikat |
+| `commands::foreign_key_conflict_is_not_rolled_back` | anderswo neu verschlüsselt: zwei Änderungen landen beide in der Konflikt-Kopie |
 
 ### Ausgeführt
 
 | Prüfung | Ergebnis |
 |---|---|
-| `cargo test --workspace` | Core 50/50, App 16/16 (+ 2 Disk-voll-Tests manuell mit Image, grün) |
+| `cargo test --workspace` | Core 50/50, App 17/17 (+ 2 Disk-voll-Tests manuell mit Image, grün) |
 | `cargo clippy --workspace --tests` | 0 Warnungen |
 | `cargo check --target x86_64-pc-windows-msvc --workspace --tests` | fehlerfrei |
 | `pnpm test`, `pnpm build` | 6/6, fehlerfrei |
