@@ -126,6 +126,17 @@ export default function EntryDetail(props: Props) {
       if (draft.id) await loadEntry(saved.id);
     } catch (err) {
       toast(String(err), true);
+      // re-keyed on another device: the backend kept the change (it lives in
+      // the conflict copy and in the open vault) — leave the form so a second
+      // click can't store a new entry twice
+      if (/extern mit anderem Schlüssel geändert/.test(String(err))) {
+        try {
+          await props.onChanged(draft.id ?? null);
+          if (draft.id) await loadEntry(draft.id);
+        } catch (e2) {
+          toast(String(e2), true);
+        }
+      }
     }
   };
 

@@ -81,7 +81,7 @@ const de: Content = {
     {
       title: 'TOTP, Anhänge & mehr',
       body: [
-        'Einmalcodes (TOTP): den 2FA-Schlüssel im Eintrag hinterlegen — keypile zeigt den laufenden 6-stelligen Code direkt an.',
+        'Einmalcodes (TOTP): den 2FA-Schlüssel im Eintrag hinterlegen — keypile zeigt den laufenden Code (meist 6-stellig) direkt an.',
         'Datei-Anhänge: Dokumente sicher beim Eintrag ablegen, verschlüsselt im Tresor.',
         'Beides gehört später zu keypile unlocked — in der Testphase ist es frei testbar.',
       ],
@@ -196,6 +196,7 @@ const de: Content = {
       body: [
         'keypile braucht keinen eigenen Server: Lege die Tresor-Datei in einen synchronisierten Ordner (iCloud Drive, Dropbox, Google Drive, Nextcloud …) und öffne sie auf jedem Gerät.',
         'Ändert ein anderes Gerät die Datei, erkennt keypile das und führt die Stände zusammen; bei echten Konflikten wird nichts verworfen, sondern ein Konflikt-Eintrag angelegt.',
+        'Hat ein anderes Gerät inzwischen das Master-Passwort geändert, kann keypile die Datei nicht mehr lesen und überschreibt sie deshalb nicht: Deine Version wird als „<Name> (Konflikt).keypile“ daneben gesichert (auch jede weitere Änderung bis zum Sperren); das Bearbeiten-Formular schließt sich dabei, damit ein zweiter Klick nichts doppelt anlegt. Danach den Tresor sperren, mit dem neuen Passwort öffnen und fehlende Einträge aus der Konflikt-Datei übernehmen (sie lässt sich mit dem alten Passwort öffnen).',
         'Endgültig Gelöschtes (Papierkorb leeren, „Endgültig löschen“) bleibt als inhaltsleere Markierung im Tresor. So erreicht die Löschung auch die anderen Geräte, und der Eintrag kehrt beim nächsten Abgleich nicht zurück. Hat ein anderes Gerät den Eintrag in der Zwischenzeit bearbeitet, geht diese Bearbeitung nicht verloren.',
         'Ältere keypile-Versionen (vor 1.0) kennen diese Markierung nicht: Dort erscheinen endgültig gelöschte Einträge als leere Einträge im Papierkorb. Leert man dort den Papierkorb, verschwindet die Markierung, und ein Gerät mit einer älteren Kopie kann den Eintrag zurückbringen — deshalb alle Geräte, die denselben Tresor nutzen, auf 1.0 aktualisieren.',
         'Zero-Knowledge bleibt gewahrt: Der Cloud-Anbieter sieht nur verschlüsselte Bytes.',
@@ -309,7 +310,7 @@ const en: Content = {
     {
       title: 'TOTP, attachments & more',
       body: [
-        'One-time codes (TOTP): store the 2FA secret in an entry — keypile shows the running 6-digit code right there.',
+        'One-time codes (TOTP): store the 2FA secret in an entry — keypile shows the running code (usually 6 digits) right there.',
         'File attachments: keep documents with the entry, encrypted inside the vault.',
         'Both will belong to keypile unlocked — free to test during the trial phase.',
       ],
@@ -424,6 +425,7 @@ const en: Content = {
       body: [
         'keypile needs no server of its own: put the vault file into a synced folder (iCloud Drive, Dropbox, Google Drive, Nextcloud …) and open it on any device.',
         'When another device changes the file, keypile notices and merges the states; on real conflicts nothing is discarded — a conflict entry is created instead.',
+        'If another device has changed the master password in the meantime, keypile can no longer read the file and therefore does not overwrite it: your version is saved next to it as “<name> (conflict).keypile” (so is every further change until you lock); the edit form closes so a second click can’t add anything twice. Then lock the vault, open it with the new password and carry over missing entries from the conflict file (it opens with the old password).',
         'Permanently deleted entries (empty trash, “Delete permanently”) stay in the vault as a content-free marker. That way the deletion reaches your other devices too, and the entry does not come back on the next merge. If another device edited the entry in the meantime, that edit is not lost.',
         'Older keypile versions (before 1.0) don’t know this marker: there, permanently deleted entries show up as empty entries in the trash. Emptying the trash there removes the marker, and a device holding an older copy can bring the entry back — so update every device that uses the same vault to 1.0.',
         'Zero-knowledge holds: your cloud provider only ever sees encrypted bytes.',

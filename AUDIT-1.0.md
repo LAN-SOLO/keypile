@@ -448,3 +448,66 @@ Keine neuen Abhängigkeiten. Version bleibt 1.0.0.
 - Export-Bestätigung: der zweizeilige Text im nativen Dialog (TaskDialog/NSAlert) gut lesbar.
 - CSV-Export in Excel/Numbers öffnen: Textzellen mit `'`-Präfix werden als Text angezeigt, keine Formel ausgeführt.
 - Gemischter Betrieb 0.3.x/1.0 auf zwei Geräten (Purge-Tombstone-Verhalten wie dokumentiert).
+
+## 12. Runde 3 – Verifikation (unabhängige Prüfung, 2026-10-20)
+
+Basis: `bad39c5`. Diff `90eb259..bad39c5` auf Regressionen gelesen (plattformübergreifend,
+async/Races, i18n, Hilfe DE/EN), alle Prüfungen neu ausgeführt, zehn bisher nicht genannte
+Hilfe-Aussagen gegen den Code geprüft.
+
+### Nachgebessert
+
+| Befund | Lösung |
+|---|---|
+| **Doppelter Eintrag nach Fremdschlüssel-Konflikt:** Wurde das Master-Passwort auf einem anderen Gerät geändert, behält `with_session_tx` die Änderung bewusst (sie steht in der Konflikt-Kopie). Das Formular eines *neuen* Eintrags blieb aber offen; ein zweiter Klick auf „Speichern“ legte ihn ein zweites Mal an (Speicher und Konflikt-Kopie). Im Harness nachgestellt: vor der Korrektur „entry stored 2×“ in allen vier Konfigurationen | `EntryDetail.save`: bei dieser Meldung schließt das Formular und lädt die Ansicht neu (Änderung ist ja gespeichert). Journey `rekeyConflict` neu, 4/4 grün |
+| Hilfe/Tutorial: „zeigt den laufenden 6-stelligen Code“ — die TOTP-Stellen kommen aus der URI (4–10) | „laufenden Code (meist 6-stellig)“, DE+EN |
+| Hilfe „Sync“ erklärte nicht, was bei einem auf einem anderen Gerät geänderten Master-Passwort passiert | Absatz DE+EN (Konflikt-Datei `<Name> (Konflikt).keypile` bzw. `(conflict)`, mit altem Passwort lesbar, jede weitere Änderung bis zum Sperren landet dort, Formular schließt sich); README ergänzt |
+
+### Stichprobe Hilfe-Aussagen (gegen Code geprüft, alle zutreffend)
+
+1. Kürzel ⌘/Strg+U öffnet die (erste) URL, ⌘/Strg+E bearbeitet (nicht im Papierkorb) — `MainView` Kürzel-Handler.
+2. ⌘/Strg+C greift nicht bei markiertem Text oder fokussiertem Feld.
+3. ↑/↓ funktioniert auch aus dem Suchfeld heraus, nicht in anderen Feldern und nicht im Audit.
+4. TOTP: SHA-1/256/512, Stellen und Periode aus der URI (`core/src/totp.rs`, Stellen 4–10, Periode ≤ 86 400 s), Ablauf-Anzeige (`totp-ring`).
+5. Updates signiert von `github.com/LAN-SOLO/keypile/releases/latest/download/latest.json` (minisign-`pubkey` in `tauri.conf.json`).
+6. Modus Dunkel ist Standard (`settings::default_theme`), gilt per `data-theme` für die ganze App.
+7. Audit: Zähl-Kachel für Passkeys vorhanden, Seitenleisten-Eintrag „Passkeys“ trägt das „bald“-Badge.
+8. Anhänge: „Speichern unter“ und „Entfernen“ (mit Bestätigung) am Eintrag.
+9. Generator: Stärke-Anzeige (`StrengthMeter`) und ↻ „Neu generieren“.
+10. „Zuletzt geöffnet“ auf dem Entsperr-Bildschirm aus `settings.recent_vaults`; Kopieren eigener Felder und des Generators läuft über `copy_secret` → dieselbe Auto-Clear-/Verlaufs-Markierung wie Passwort-Kopien.
+
+### Geprüft, nicht widerlegt
+
+- `with_session_tx`: In allen zehn speichernden Commands steht nach `persist` nur noch Unfehlbares (Anhang-Bytes leeren, DTO bauen) — ein Rollback nach erfolgreichem Schreiben (Speicher ≠ Platte) ist nicht möglich. Merge + fehlgeschlagenes Schreiben: Rollback verwirft die gemergten Fremdänderungen, `disk_hash` bleibt alt, der nächste Speichervorgang merged erneut. Fehler beim Schreiben der Konflikt-Kopie beginnen nicht mit `FOREIGN_KEY_MSG` → Rollback (korrekt, nichts gesichert). Die Meldung ist unverändert gegenüber vorher (Zeilenfortsetzung), `errors.ts` übersetzt sie weiter.
+- Passwortwechsel (`rekey`) läuft absichtlich nicht über `with_session_tx`, hat eigenes Zurücksetzen von Schlüssel/Header.
+- CSV-Formelschutz: Import nimmt ein `'` nur vor einem Auslöserzeichen weg; Passwort ungetrimmt, aber ein Passwort nur aus Leerzeichen wird weiterhin übersprungen (wie zuvor). Export-Zählung (`!deleted`) entspricht dem Export-Filter; Purge setzt `deleted`.
+- Ordner aufklappen: Frontend trimmt den Namen wie das Backend, Pfadschlüssel identisch zu `buildFolderTree`.
+- Mindestlänge: Rust `chars().count()` und UI `[...s].length` zählen beide Code Points.
+
+### Rest (dokumentiert, nicht geändert)
+
+- Im Fremdschlüssel-Zustand kann ein *wiederholter Import* (gleiche Datei zweimal) die Einträge doppelt in die Konflikt-Kopie schreiben; der Toast meldet das Sichern, ein Wiederholen ist daher unwahrscheinlich.
+- `with_session_tx` klont pro Aktion den ganzen Tresor (inkl. Base64-Anhängen); bei sehr vielen großen Anhängen kostet jede Aktion entsprechend Speicher/Zeit. Funktional korrekt, der Klon wird anschließend gewischt.
+- Formulierung Import & Export: „BOM, damit Excel Umlaute richtig anzeigt“ neben „nicht in einer Tabellenkalkulation öffnen“ — sachlich beides richtig (Passwortzellen bleiben ungeschützt), bewusst belassen.
+- Unverändert aus §11: zip 4.6.1 über den Updater, `.bak`-Randfall bei schreibgeschützter alter `.bak` unter Unix, CSV ohne eigene Felder.
+
+### Ausgeführt
+
+| Prüfung | Ergebnis |
+|---|---|
+| `cargo test --workspace` | Core 50/50, App 17/17 (2 `#[ignore]` Datenträger-voll-Tests nicht erneut ausgeführt) |
+| `cargo clippy --workspace --tests` | 0 Warnungen |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, Stubs, ohne Linken) | fehlerfrei |
+| `cargo audit` | unverändert gegenüber §11 |
+| `pnpm test`, `pnpm build` | 6/6, fehlerfrei |
+| Headless-Chromium, Runde-3-Journeys inkl. neuem `rekeyConflict` (DE/EN × Win32/macOS × Dunkel/Hell) | 4 × 17 Schritte grün (vor der Korrektur: `rekeyConflict` rot) |
+| Headless-Chromium, Runde-2-Regressionslauf | 4 × 23 Schritte grün |
+
+Rust-Code in dieser Runde unverändert; Änderungen nur in `EntryDetail.tsx`, `Help.tsx`, README, AUDIT.
+Keine neuen Abhängigkeiten, Version 1.0.0.
+
+### Nur auf echter Hardware prüfbar
+
+Wie §9–§11; zusätzlich: Master-Passwort auf Gerät A ändern, auf Gerät B (noch offen) einen Eintrag
+anlegen → Toast nennt die Konflikt-Datei, Formular schließt sich, Konflikt-Datei mit altem Passwort
+öffnen und Eintrag genau einmal vorhanden.

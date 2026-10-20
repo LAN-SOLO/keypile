@@ -48,7 +48,11 @@ verwenden**, siehe Disclaimer auf der Produktseite.
   Tresor-Datei werden per Versionsvektor-Merge zusammengeführt — Konflikte
   landen als Kopien im Tresor, nie stiller Datenverlust; endgültiges Löschen
   synchronisiert als inhaltsleerer Tombstone mit (Clients vor 1.0 zeigen ihn
-  als leeren Papierkorb-Eintrag — alle Geräte auf 1.0 aktualisieren)
+  als leeren Papierkorb-Eintrag — alle Geräte auf 1.0 aktualisieren).
+  Wurde das Master-Passwort auf einem anderen Gerät geändert, überschreibt
+  keypile die Datei nicht, sondern sichert die eigene Version als
+  `<Name> (Konflikt).keypile` daneben (mit dem alten Passwort lesbar); das
+  Bearbeiten-Formular schließt sich dabei, damit nichts doppelt angelegt wird
 - Auto-Lock (auch nach Ruhezustand), Sperren bei Fokusverlust,
   Zwischenablage-Auto-Clear (spätestens beim Sperren oder Beenden; Secrets
   sind vom Windows-Verlauf Win+V und von macOS-Clipboard-Managern
