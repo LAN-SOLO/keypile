@@ -511,3 +511,32 @@ Keine neuen Abhängigkeiten, Version 1.0.0.
 Wie §9–§11; zusätzlich: Master-Passwort auf Gerät A ändern, auf Gerät B (noch offen) einen Eintrag
 anlegen → Toast nennt die Konflikt-Datei, Formular schließt sich, Konflikt-Datei mit altem Passwort
 öffnen und Eintrag genau einmal vorhanden.
+
+## Runde 4 – Regressionen (platform)
+
+Basis: `4dddc5a`. Diff `90eb259..4dddc5a` mit Blick auf Nebenläufigkeit, Plattform und Lebenszyklus
+gelesen (`with_session_tx`, `atomic_write`, `write_user_file`, Fremdschlüssel-Pfad, Exit-/Updater-Hooks
+unverändert seit §10).
+
+### Behoben
+
+| Befund | Lösung |
+|---|---|
+| **Intakte ältere `.bak` gelöscht** (Regression aus §11): Schlug das Kopieren der Tresor-Datei nach `.bak` fehl, weil die *Quelle* nicht lesbar war (Windows: OneDrive/Virenscanner hält sie ohne Lese-Freigabe), verglich der Code die Länge der aktuellen Datei mit der älteren `.bak` — die unterscheidet sich praktisch immer, also wurde die einzige gültige Sicherung entfernt. Ebenso bei schreibgeschützter `.bak` unter Unix (Rest aus §12) | `.bak` wird über eine eigene Temp-Datei (`.<name>.keypile.bak.tmp`) + Umbenennen erneuert; bei jedem Fehler wird nur die Temp-Datei entfernt, eine vorhandene `.bak` bleibt, eine abgeschnittene `.bak` kann nicht mehr entstehen. Test `unreadable_vault_keeps_intact_older_backup` |
+| **Gesperrte Datei wurde ohne Merge überschrieben:** `persist` übersprang den Fremdänderungs-Abgleich bei *jedem* Lesefehler. War die Datei kurz gesperrt (Windows) und gab der Sync-Client sie innerhalb der Umbenennungs-Wiederholungen frei, überschrieb keypile die Datei — Änderungen eines anderen Geräts darin gingen verloren; widersprach der neuen Hilfe-Aussage „Datei gesperrt → letzte gültige Version bleibt“ | `read_existing`: nur „Datei fehlt“ überspringt den Abgleich; sonst unter Windows 5 × 100 ms erneut lesen, danach „Speichern fehlgeschlagen: …“ (übersetzt), `with_session_tx` rollt zurück, nächstes Speichern merged. Test `unreadable_vault_is_not_overwritten_blindly` (vorher: Speichern „erfolgreich“, Eintrag von B weg) |
+
+### Geprüft ohne Befund
+
+- Sperr-Reihenfolge: `settings::load` (Settings-Mutex) läuft in allen speichernden Commands *vor* `with_session_tx`; kein Pfad hält Session- und Settings-Mutex gleichzeitig in umgekehrter Reihenfolge. Langsame Datei-IO unter der Session-Sperre nur in `#[tauri::command(async)]`-Commands (nicht im Haupt-Thread); Argon2 beim Passwortwechsel weiterhin ohne Sperre.
+- `session_tx` tauscht nur `vault`; Schlüssel/Header/`disk_hash` ändert `persist` erst nach erfolgreichem Schreiben. Sperren während eines Speichervorgangs wartet auf die Session-Sperre.
+- Windows: `write_user_file`/`atomic_write` schließen das Handle vor `remove_file`; `cargo check --target x86_64-pc-windows-msvc --workspace --tests` fehlerfrei.
+- i18n/Hilfe: Export-Warnung, Plan-Text und neue Hilfe-Absätze DE/EN inhaltsgleich; Fremdschlüssel-Erkennung in `EntryDetail` prüft die rohe (deutsche) Backend-Meldung, nicht die übersetzte.
+
+### Ausgeführt
+
+`cargo test --workspace` (Core 51/51, App 19/19), die zwei `#[ignore]`-Datenträger-voll-Tests auf einem
+2-MB-HFS+-Image grün, `cargo clippy -p keypile --tests` 0 Warnungen, Windows-`cargo check` fehlerfrei,
+`pnpm build` fehlerfrei, `pnpm test` 6/6. Version 1.0.0, keine neuen Abhängigkeiten.
+
+Nur auf echter Hardware prüfbar: Speichern, während OneDrive/Virenscanner die Tresor-Datei sperrt
+(erwartet: „Speichern fehlgeschlagen“ statt stillem Überschreiben; `.bak` bleibt erhalten).

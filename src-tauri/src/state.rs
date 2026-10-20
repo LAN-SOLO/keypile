@@ -90,18 +90,17 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         return Err(e);
     }
     if path.exists() {
+        // refresh the .bak via its own temp file + rename: a copy that dies
+        // midway (disk full) never leaves a truncated .bak, and an intact
+        // older .bak survives when the copy fails (file locked by a sync
+        // client or virus scanner, unreadable) — best effort either way
         let bak = backup_path(path);
-        if std::fs::copy(path, &bak).is_err() {
-            // a copy that died midway (disk full) leaves a truncated .bak that
-            // would look like a valid backup — remove it; an intact older
-            // .bak (copy failed at open, e.g. locked) is kept
-            let same_len = |a: &Path, b: &Path| {
-                matches!((std::fs::metadata(a), std::fs::metadata(b)),
-                    (Ok(x), Ok(y)) if x.len() == y.len())
-            };
-            if !same_len(path, &bak) {
-                let _ = std::fs::remove_file(&bak);
-            }
+        let bak_tmp = dir.join(format!(
+            ".{}.tmp",
+            bak.file_name().and_then(|n| n.to_str()).unwrap_or("vault.bak")
+        ));
+        if std::fs::copy(path, &bak_tmp).is_err() || std::fs::rename(&bak_tmp, &bak).is_err() {
+            let _ = std::fs::remove_file(&bak_tmp);
         }
     }
     if let Err(e) = rename_with_retry(&tmp, path) {
@@ -151,6 +150,27 @@ pub struct PersistOutcome {
     pub conflicts: usize,
 }
 
+/// Read the vault file for the external-change check: `None` if it does not
+/// exist, an error if it exists but cannot be read. Windows locks from sync
+/// clients and virus scanners are short, so retry there briefly.
+fn read_existing(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    let attempts = if cfg!(windows) { 5 } else { 1 };
+    let mut i = 0;
+    loop {
+        match std::fs::read(path) {
+            Ok(b) => return Ok(Some(b)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                i += 1;
+                if i >= attempts {
+                    return Err(e);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
+}
+
 /// Seal and write the current vault. If the file changed on disk since we last
 /// touched it (cloud sync!), decrypt the disk version with our key, merge it
 /// in, and write the merged result — never blindly overwrite.
@@ -160,7 +180,12 @@ pub fn persist(session: &mut Session) -> Result<PersistOutcome, String> {
         conflicts: 0,
     };
 
-    if let Ok(disk_bytes) = std::fs::read(&session.path) {
+    // A file that exists but cannot be read (Windows: locked by a sync client
+    // or virus scanner) must not be overwritten unchecked — it may hold
+    // another device's changes. Only a missing file skips the merge.
+    if let Some(disk_bytes) = read_existing(&session.path)
+        .map_err(|e| format!("Speichern fehlgeschlagen: {e}"))?
+    {
         if file_hash(&disk_bytes) != session.disk_hash {
             // External change detected. Try to open the disk version with the
             // key we hold (works as long as salt/KDF are unchanged).
@@ -428,6 +453,65 @@ mod tests {
         persist(&mut a).unwrap();
         let reopened = open_session(&path, "pw");
         assert_eq!(reopened.unlocked.vault.entries[0].title, "neu");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Round 4: the vault file cannot be read (Windows: OneDrive/virus scanner
+    /// holds it without read sharing; simulated with mode 000). The older
+    /// `.bak` is an intact backup and must not be deleted just because the
+    /// copy failed and its length differs from the current file.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_vault_keeps_intact_older_backup() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmpdir("bak-keep");
+        let path = dir.join("v.keypile");
+        std::fs::write(&path, b"current version, longer than the backup").unwrap();
+        std::fs::write(backup_path(&path), b"older backup").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&path).is_ok() {
+            // root reads anything — nothing to test
+            std::fs::remove_dir_all(&dir).ok();
+            return;
+        }
+        let _ = atomic_write(&path, b"new");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(std::fs::read(backup_path(&path)).unwrap(), b"older backup");
+        assert!(!dir.join(".v.keypile.bak.tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Round 4: if the file exists but cannot be read, `persist` must not
+    /// skip the external-change check and overwrite it blindly — another
+    /// device's change in it would be lost. Saving fails instead (and is
+    /// rolled back by the caller); once readable again, it merges.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_vault_is_not_overwritten_blindly() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmpdir("unreadable");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw");
+        let mut b = open_session(&path, "pw");
+        b.unlocked.vault.entries.push(Entry::new("von B"));
+        persist(&mut b).unwrap();
+        a.unlocked.vault.entries.push(Entry::new("von A"));
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&path).is_ok() {
+            std::fs::remove_dir_all(&dir).ok();
+            return;
+        }
+        let r = persist(&mut a);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let err = r.unwrap_err();
+        assert!(err.starts_with("Speichern fehlgeschlagen"), "{err}");
+        persist(&mut a).unwrap();
+        let disk = open_session(&path, "pw");
+        let mut titles: Vec<_> = disk.unlocked.vault.entries.iter().map(|e| e.title.clone()).collect();
+        titles.sort();
+        assert_eq!(titles, ["von A", "von B"]);
         std::fs::remove_dir_all(&dir).ok();
     }
 
