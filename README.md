@@ -40,11 +40,15 @@ verwenden**, siehe Disclaimer auf der Produktseite.
 - Passwort-Check: schwach (zxcvbn), wiederverwendet, alt, geleakt
   (Have-I-Been-Pwned per k-Anonymity — nur 5 Hash-Zeichen verlassen das Gerät)
 - Import: CSV (Chrome, KeePassXC, LastPass, Bitwarden, 1Password; UTF-8 mit
-  oder ohne BOM) und unverschlüsseltes Bitwarden-JSON; Export: CSV (mit Warnung)
+  oder ohne BOM) und unverschlüsseltes Bitwarden-JSON; Export: CSV (mit Warnung;
+  Ordner/Titel/Benutzer/Passwort/erste URL/Notizen/TOTP — ohne eigene Felder,
+  Anhänge, Tags, Verlauf; Formel-Schutz per `'` für Textspalten, Passwort und
+  TOTP byte-genau, siehe `FORMAT.md` §6a)
 - Cloud-Sync über beliebige Sync-Ordner: externe Änderungen an der
   Tresor-Datei werden per Versionsvektor-Merge zusammengeführt — Konflikte
   landen als Kopien im Tresor, nie stiller Datenverlust; endgültiges Löschen
-  synchronisiert als inhaltsleerer Tombstone mit
+  synchronisiert als inhaltsleerer Tombstone mit (Clients vor 1.0 zeigen ihn
+  als leeren Papierkorb-Eintrag — alle Geräte auf 1.0 aktualisieren)
 - Auto-Lock (auch nach Ruhezustand), Sperren bei Fokusverlust,
   Zwischenablage-Auto-Clear (spätestens beim Sperren oder Beenden; Secrets
   sind vom Windows-Verlauf Win+V und von macOS-Clipboard-Managern

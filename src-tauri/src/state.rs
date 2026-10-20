@@ -77,15 +77,32 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         ".{}.tmp",
         path.file_name().and_then(|n| n.to_str()).unwrap_or("vault")
     ));
-    {
+    let written = (|| {
         let mut f = std::fs::File::create(&tmp)?;
         f.write_all(bytes)?;
         // make sure the bytes are on disk before the rename publishes them —
         // otherwise a crash/power loss can leave an empty vault behind
-        f.sync_all()?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        // disk full / quota: don't leave a half-written temp file behind
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
     if path.exists() {
-        let _ = std::fs::copy(path, backup_path(path));
+        let bak = backup_path(path);
+        if std::fs::copy(path, &bak).is_err() {
+            // a copy that died midway (disk full) leaves a truncated .bak that
+            // would look like a valid backup — remove it; an intact older
+            // .bak (copy failed at open, e.g. locked) is kept
+            let same_len = |a: &Path, b: &Path| {
+                matches!((std::fs::metadata(a), std::fs::metadata(b)),
+                    (Ok(x), Ok(y)) if x.len() == y.len())
+            };
+            if !same_len(path, &bak) {
+                let _ = std::fs::remove_file(&bak);
+            }
+        }
     }
     if let Err(e) = rename_with_retry(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
@@ -371,6 +388,94 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"two");
         assert_eq!(std::fs::read(backup_path(&path)).unwrap(), b"one");
         assert!(!dir.join(".v.keypile.tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Journey "read-only folder": saving fails with a clear error, the file
+    /// on disk stays the last good version, nothing half-written is left, and
+    /// the change is still in memory — once the folder is writable again the
+    /// next save succeeds. A restart in between sees the last good version.
+    #[cfg(unix)]
+    #[test]
+    fn read_only_folder_fails_cleanly_and_recovers() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmpdir("readonly");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw");
+        a.unlocked.vault.entries.push(Entry::new("neu"));
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        // root ignores directory permissions — nothing to test then
+        if std::fs::File::create(dir.join("probe")).is_ok() {
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::remove_dir_all(&dir).ok();
+            return;
+        }
+        let err = persist(&mut a).unwrap_err();
+        assert!(err.starts_with("Speichern fehlgeschlagen"), "{err}");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "last good version untouched");
+        assert!(!dir.join(".v.keypile.tmp").exists());
+        assert_eq!(a.unlocked.vault.entries.len(), 1, "change kept in memory");
+        // "restart" while still read-only: the old state opens fine
+        assert!(open_session(&path, "pw").unlocked.vault.entries.is_empty());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        persist(&mut a).unwrap();
+        let reopened = open_session(&path, "pw");
+        assert_eq!(reopened.unlocked.vault.entries[0].title, "neu");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Journey "app killed mid-save": a stale temp file from a crash between
+    /// write and rename must neither block opening nor the next save.
+    #[test]
+    fn stale_temp_file_from_crash_is_harmless() {
+        let dir = tmpdir("stale-tmp");
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        std::fs::write(dir.join(".v.keypile.tmp"), b"half-written garbage").unwrap();
+        let mut a = open_session(&path, "pw");
+        a.unlocked.vault.entries.push(Entry::new("nach Absturz"));
+        persist(&mut a).unwrap();
+        assert!(!dir.join(".v.keypile.tmp").exists());
+        assert_eq!(open_session(&path, "pw").unlocked.vault.entries.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Journey "disk full". Needs a small scratch volume, so it only runs on
+    /// request: `KEYPILE_FULL_DIR=/Volumes/kpfull cargo test -p keypile -- --ignored disk_full`
+    /// (macOS: `hdiutil attach $(hdiutil create -size 2m -fs HFS+ -volname kpfull -o /tmp/kpfull)`).
+    #[test]
+    #[ignore]
+    fn disk_full_keeps_last_good_version() {
+        let Ok(base) = std::env::var("KEYPILE_FULL_DIR") else { return };
+        let dir = PathBuf::from(base).join(format!("kp-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.keypile");
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, fast_kdf()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut a = open_session(&path, "pw");
+        persist(&mut a).unwrap(); // creates the .bak
+        let mut big = Entry::new("groß");
+        big.notes = "x".repeat(256 * 1024);
+        a.unlocked.vault.entries.push(big);
+        // fill the volume
+        let filler = dir.join("filler");
+        {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&filler).unwrap();
+            let chunk = vec![0u8; 16 * 1024];
+            while f.write_all(&chunk).is_ok() {}
+            let _ = f.sync_all();
+        }
+        let err = persist(&mut a).unwrap_err();
+        assert!(err.starts_with("Speichern fehlgeschlagen"), "{err}");
+        assert!(!dir.join(".v.keypile.tmp").exists(), "no half-written temp file");
+        assert!(open_session(&path, "pw").unlocked.vault.entries.is_empty());
+        std::fs::remove_file(&filler).unwrap();
+        persist(&mut a).unwrap();
+        assert_eq!(open_session(&path, "pw").unlocked.vault.entries.len(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 

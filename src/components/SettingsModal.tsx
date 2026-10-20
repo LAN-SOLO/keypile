@@ -236,7 +236,15 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
                 <button
                   type="button"
                   className="ghost"
-                  onClick={async () => setCurKeyfile(await pickFile())}
+                  onClick={async () => {
+                    // cancelling keeps the previous choice; dialog errors → toast
+                    try {
+                      const sel = await pickFile();
+                      if (sel) setCurKeyfile(sel);
+                    } catch (err) {
+                      toast(String(err), true);
+                    }
+                  }}
                 >
                   {curKeyfile ? baseName(curKeyfile) : t.keyfileCurrent}
                 </button>
@@ -248,8 +256,12 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
                 className="ghost"
                 disabled={dropKeyfile}
                 onClick={async () => {
-                  const sel = await pickFile();
-                  if (sel) setNewKeyfile(sel);
+                  try {
+                    const sel = await pickFile();
+                    if (sel) setNewKeyfile(sel);
+                  } catch (err) {
+                    toast(String(err), true);
+                  }
                 }}
               >
                 {newKeyfile ? baseName(newKeyfile) : t.keyfileNew}
@@ -285,7 +297,7 @@ export default function SettingsModal({ onClose, onVaultChanged }: Props) {
               disabled={
                 busy ||
                 !currentPw ||
-                newPw.length < 8 ||
+                [...newPw].length < 8 ||
                 !newPw2 ||
                 (status.uses_keyfile && !curKeyfile)
               }

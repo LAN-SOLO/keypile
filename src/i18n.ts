@@ -134,7 +134,7 @@ const de = {
     `${added} Einträge importiert${skipped > 0 ? `, ${skipped} übersprungen` : ''}.`,
   exportBtn: 'Als CSV exportieren',
   exportWarning:
-    'Achtung: Der CSV-Export ist UNVERSCHLÜSSELT. Datei danach sicher löschen.',
+    'Achtung: Der CSV-Export ist UNVERSCHLÜSSELT. Datei danach sicher löschen.\n\nEnthalten: Ordner, Titel, Benutzername, Passwort, erste URL, Notizen, TOTP (auch archivierte Einträge, nicht der Papierkorb). Nicht enthalten: eigene Felder, weitere URLs, Tags, Anhänge, Passwort-Verlauf.',
   exportDone: (n: number) => `${n} Einträge exportiert.`,
   changeMaster: 'Master-Passwort ändern',
   currentPassword: 'Aktuelles Master-Passwort',
@@ -146,7 +146,7 @@ const de = {
     'Der lokale Tresor ohne Limits: unbegrenzte Einträge, alle Kategorien & Vorlagen, Generator, Basis-Passwort-Check (schwach/identisch), Import/Export, Schlüsseldatei, Updates. Sync über deinen eigenen Cloud-Speicher: Tresor-Datei einfach in Dropbox / Google Drive / iCloud Drive legen — der Anbieter sieht nur Chiffretext, keypile führt externe Änderungen automatisch zusammen.',
   planUnlocked: 'unlocked — 12 € / Jahr (1 € pro Monat)',
   planUnlockedDesc:
-    'Einmalcodes (TOTP/2FA), verschlüsselte Anhänge, das volle Audit (Leak-Abgleich, Passwort-Alter), Passkeys — plus künftig Browser-Autofill (Chrome, Firefox, browse), E2E-Geräte-Sync ohne Cloud-Laufwerk und sicheres Teilen. Buchbar zum Start des Abos; in der Testphase sind alle unlocked-Features kostenlos testbar.',
+    'Einmalcodes (TOTP/2FA), verschlüsselte Anhänge, das volle Audit (Leak-Abgleich, Passwort-Alter) — plus künftig Passkeys, Browser-Autofill (Chrome, Firefox, browse), E2E-Geräte-Sync ohne Cloud-Laufwerk und sicheres Teilen. Buchbar zum Start des Abos; in der Testphase sind alle unlocked-Features kostenlos testbar.',
   planWaitlist: 'Warteliste auf lan-solo.com/tools/keypile',
   vaultInfo: 'Tresor',
   syncHint:
@@ -391,7 +391,8 @@ const en: typeof de = {
   importDone: (added: number, skipped: number) =>
     `Imported ${added} entries${skipped > 0 ? `, skipped ${skipped}` : ''}.`,
   exportBtn: 'Export as CSV',
-  exportWarning: 'Warning: the CSV export is UNENCRYPTED. Delete the file securely afterwards.',
+  exportWarning:
+    'Warning: the CSV export is UNENCRYPTED. Delete the file securely afterwards.\n\nIncluded: folder, title, username, password, first URL, notes, TOTP (archived entries too, not the trash). Not included: custom fields, further URLs, tags, attachments, password history.',
   exportDone: (n: number) => `Exported ${n} entries.`,
   changeMaster: 'Change master password',
   currentPassword: 'Current master password',
@@ -403,7 +404,7 @@ const en: typeof de = {
     'The local vault with no limits: unlimited entries, all categories & templates, generator, basic password check (weak/identical), import/export, key file, updates. Sync via your own cloud storage: just put the vault file in Dropbox / Google Drive / iCloud Drive — the provider only ever sees ciphertext, keypile merges external changes automatically.',
   planUnlocked: 'unlocked — €12 / year (€1 per month)',
   planUnlockedDesc:
-    'One-time codes (TOTP/2FA), encrypted attachments, the full audit (breach check, password age), passkeys — plus, later, browser autofill (Chrome, Firefox, browse), E2E device sync without a cloud drive and secure sharing. Purchasable once the subscription launches; during the trial phase every unlocked feature is free to test.',
+    'One-time codes (TOTP/2FA), encrypted attachments, the full audit (breach check, password age) — plus, later, passkeys, browser autofill (Chrome, Firefox, browse), E2E device sync without a cloud drive and secure sharing. Purchasable once the subscription launches; during the trial phase every unlocked feature is free to test.',
   planWaitlist: 'Waitlist at lan-solo.com/tools/keypile',
   vaultInfo: 'Vault',
   syncHint:

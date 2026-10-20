@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { api } from '../api';
-import { baseName, pickFile, pickSavePath } from '../dialogs';
+import { baseName, pickFile, pickSavePath, safeFileName } from '../dialogs';
 import { localizeError } from '../errors';
 import { useApp } from '../App';
 import StrengthMeter from './StrengthMeter';
@@ -46,7 +46,8 @@ export default function UnlockScreen() {
 
   const pickNewLocation = async () => {
     const sel = await pickSavePath({
-      defaultPath: `${name.trim() || t.defaultVaultName}.keypile`,
+      // the vault name is free text — "Privat/Arbeit" or "a:b" must not steer the dialog
+      defaultPath: `${safeFileName(name.trim() || t.defaultVaultName, t.defaultVaultName)}.keypile`,
       filters: [{ name: 'keypile', extensions: ['keypile'] }],
     });
     if (!sel) return null;
@@ -231,7 +232,7 @@ export default function UnlockScreen() {
             <button
               className="primary"
               type="submit"
-              disabled={busy || password.length < 8 || !password2}
+              disabled={busy || [...password].length < 8 || !password2}
             >
               {busy ? '…' : t.create}
             </button>

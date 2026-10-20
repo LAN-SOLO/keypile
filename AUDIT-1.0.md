@@ -115,8 +115,8 @@ Legende: **T** = automatisiert getestet · **U** = im UI-Durchlauf getestet · *
 - **Kein externer Krypto-Audit.** Die In-App-Texte (Hilfe, Plan) sprechen weiterhin von „Alpha“ —
   ob 1.0 diese Hinweise behält, ist eine Produktentscheidung.
 - ~~Papierkorb leeren / endgültig löschen entfernt den Tombstone~~ — behoben in Runde 2 (Purge-Tombstone, §9).
-- CSV-Export ist Klartext und wird nicht gegen Formel-Injection in Tabellenprogrammen entschärft
-  (ein Präfix würde Passwörter verfälschen, die mit `=`, `+`, `-` oder `@` beginnen).
+- ~~CSV-Export wird nicht gegen Formel-Injection entschärft~~ — Textspalten entschärft in Runde 3 (§11);
+  Passwort und TOTP bleiben bewusst byte-genau (Tabellenprogramm deshalb nicht zum Öffnen verwenden).
 - Import erwartet UTF-8; UTF-16- oder ANSI-CSV wird mit klarer Meldung abgelehnt.
 - Schlüsseldateien werden vollständig eingelesen (keine Größenbegrenzung, wie KeePassXC).
 - Zeroize ist best effort: Kopien in WebView/JS-Heap (z. B. angezeigte Passwörter) kontrolliert die App nicht.
@@ -341,3 +341,106 @@ gelesen, alle Prüfungen neu ausgeführt, L1–L13 an weiteren Stellen nachgepr�
 ### Weiterhin nur auf echter Hardware prüfbar
 
 Unverändert die Liste aus §9; zusätzlich: Zwischenablage nach einem Update unter Windows (NSIS und MSI) tatsächlich leer, und `settings.json` bleibt erhalten, wenn ein Virenscanner sie beim Start kurz sperrt.
+
+## 11. Runde 3 (2026-10-20, abschließend)
+
+Basis: `90eb259`. Schwerpunkt: jede Aussage in Hilfe (DE+EN), README und In-App-Texten gegen den
+Code geprüft, End-to-End-Journeys inkl. Fehlerfällen, offene Punkte aus Runde 2.
+
+### Falsche oder unvollständige Aussagen — korrigiert
+
+| Aussage | Befund | Lösung |
+|---|---|---|
+| Hilfe „Einträge“: „Passwörter laufen beim Kopieren nie durchs UI“ | Benutzername/Passwort/TOTP kopiert Rust direkt aus dem Tresor, eigene Felder und Generator kommen aber aus der Ansicht (`copy_secret`); das Passwort liegt zudem für „Anzeigen“ ohnehin im UI | Text präzisiert (DE+EN) |
+| Hilfe „Generator“: Passphrase „genauso stark“ | 5 Wörter (Standard) ≈ 65 Bit, 20 Zeichen aus 75 Zeichen ≈ 125 Bit | Bitwerte, Wortbereich 3–10, Länge 8–64 und die echte Liste verwechselbarer Zeichen (`Il1O0o5S`) genannt |
+| Hilfe „Suche“: durchsucht „URLs“ | Es wurde nur die erste URL durchsucht (Listen-DTO enthielt nur `url`) | **Code:** `EntrySummary.urls`, Suche über alle URLs; Hilfe ergänzt: Suche findet auch Archiviertes |
+| Hilfe „Import & Export“: „den Tresor als CSV exportieren, etwa für einen Umzug“ | Export enthält nur Ordner/Titel/Benutzer/Passwort/erste URL/Notizen/TOTP — eigene Felder (z. B. Kartennummern), weitere URLs, Tags, Anhänge, Verlauf fehlen still | Umfang in Hilfe, README, FORMAT.md §6a und **im Bestätigungsdialog des Exports** benannt |
+| Plan-Text unlocked: „…, Passkeys — plus künftig …“ | Passkeys sind nicht implementiert (Seitenleiste „bald“) | Passkeys in die „künftig“-Liste verschoben (DE+EN) |
+| Mindestlänge „8 Zeichen“ | Rust zählte Bytes (`len()`), UI UTF-16-Einheiten: 4 Emoji galten als 8 Zeichen, „äöü…“ als doppelt | Beide zählen Unicode-Codepoints (`chars().count()` / `[...pw].length`) |
+| Hilfe „Sicherheit“: Auto-Sperre/Zwischenablage-Zeit | „0 = nie“ fehlte | ergänzt |
+| Hilfe „Sync“ | Verhalten älterer Clients (vor 1.0) mit Purge-Tombstones fehlte | ergänzt (siehe Leftover unten) |
+
+Geprüft und zutreffend (Code gelesen, teils per Test/UI): Argon2id 64 MiB/t=3/p=4 + AES-256-GCM,
+Schlüsseldatei-Pflicht, Master-Passwortwechsel inkl. `.bak`, 10 Kategorien, 10 Feldtypen + Abschnitt,
+Verlauf max. 10, Ordner mit „/“ und Löschen ohne Eintragsverlust, Audit ohne Archiv/Papierkorb,
+Alters-Buckets 90/180/365/1095 Tage, schwach = zxcvbn-Score ≤ 2, HIBP 5 Hex-Zeichen + Padding + 20 s
+Timeout, TOTP-Parameter/HOTP-Ablehnung/`%3D`, Anhänge ≤ 10 MB, UTF-8-Import mit/ohne BOM, Export mit BOM,
+Standards 10 min / 30 s, Fokus-Sperre mit Dialog-Ausnahme, Ruhezustand-Prüfung, Update-Prüfung beim Start,
+Kürzel ⌘/Strg C/B/T/U/E/N/F/G/,/L und ↑/↓, Hell/Dunkel inkl. Entsperr-Bildschirm.
+
+### Behoben (Code)
+
+| Befund | Lösung |
+|---|---|
+| **CSV-Formel-Injection** (Leftover R2) | Textzellen (Ordner, Titel, Benutzer, URL, Notizen), die mit `=` `+` `-` `@` Tab oder CR beginnen, bekommen ein `'`. Passwort/TOTP bleiben byte-genau — ein Präfix würde beim Umzug in einen anderen Manager falsche Secrets importieren (der Generator erzeugt selbst Passwörter mit `=+-@`). Der keypile-Import entfernt genau ein `'` vor einem dieser Zeichen. Test `export_guards_formula_cells_but_keeps_secrets_exact` |
+| CSV-Import trimmte Passwörter (`"  pw "` → `"pw"`) → stiller Aussperr-Fall | Passwortspalte wird unverändert übernommen (Test s. o.) |
+| **Fehlgeschlagenes Speichern ließ die Änderung im Speicher** (schreibgeschützter Ordner, Datenträger voll, gesperrte Datei): Das Formular blieb offen, erneutes „Speichern“ legte einen **neuen Eintrag doppelt** an; ebenso Import, neuer Ordner, Anhang | `with_session_tx`: Bei Fehler wird der Tresor im Speicher auf den Stand vor dem Befehl zurückgesetzt (Kopie danach gewipt) — Speicher = letzte gültige Datei, Wiederholen erzeugt keine Duplikate; extern zusammengeführte Änderungen werden beim nächsten Speichern erneut gemergt. Gilt für alle elf speichernden Commands (Eintrag speichern, löschen, wiederherstellen, endgültig löschen, Papierkorb leeren, archivieren, Anhang hinzufügen/entfernen, Ordner anlegen/löschen, Import). Test `failed_save_rolls_back_so_retry_creates_no_duplicate` |
+| Datenträger voll: halb geschriebene `.v.keypile.tmp` blieb liegen; ein abgebrochenes Kopieren hinterließ eine **abgeschnittene `.bak`**, die wie eine gültige Sicherung aussah | Temp-Datei wird bei Schreibfehler entfernt; `.bak` mit falscher Länge wird gelöscht (eine intakte ältere `.bak` bleibt) |
+| Datenträger voll beim CSV-Export / „Anhang speichern unter“: **unvollständige Klartextdatei blieb liegen** | `write_user_file`: bei Fehler nach dem Anlegen wird die Teildatei gelöscht; lässt sich das Ziel nicht öffnen (schreibgeschützt/gesperrt), bleibt es unangetastet. CSV-Puffer und Anhang-Bytes werden danach zeroized |
+| Neuer Unterordner „Arbeit/Kunden“ blieb unsichtbar (Elternknoten zugeklappt) | Elternkette wird beim Anlegen aufgeklappt |
+| Schlüsseldatei-Auswahl beim Master-Passwortwechsel: Abbrechen verwarf die vorige Auswahl, Dialogfehler gingen als unbehandelte Promise verloren (L11) | vorige Auswahl bleibt, Fehler → Toast |
+| Tresorname ging ungefiltert in den Speichern-Dialog („Privat/Arbeit: Test“) (L5) | `safeFileName()` wie bei Anhängen |
+
+### Leftover dokumentiert
+
+- **Purge-Tombstones in Clients vor 1.0:** dort leere Einträge im Papierkorb; speichert ein alter
+  Client, fällt `purged` weg (1.0 zeigt den Eintrag dann ebenfalls als leeren Papierkorb-Eintrag);
+  leert er den Papierkorb, kann ein Gerät mit älterer Kopie den Eintrag zurückbringen. Anhand des
+  0.3.2-Modells (`28fd8d2`, kein `purged`-Feld, serde ignoriert Unbekanntes) nachvollzogen. Hilfe
+  (Sync, DE+EN), README, FORMAT.md §6.
+
+### End-to-End-Journeys (ausgeführt)
+
+Headless Chromium gegen den gemockten IPC (Mock wie in §9: Dialog-Plugin 2.7 mit Label-Rückgabe,
+`window.confirm` als async-Stub, echte Backend-Meldungen; neu: Mock persistiert `settings.json` über
+einen Reload = App-Neustart und spiegelt den Rollback bei Speicherfehlern), 880 × 560,
+DE/EN × Windows (`Win32`, Strg)/macOS (⌘) × Dunkel/Hell, Erststart mit leerem Profil:
+
+1. Erststart: Tutorial in Systemsprache (Backend-Default absichtlich andere Sprache), alle 7 Schritte → „Neustart“ (Reload): kein Tutorial, Sprache bleibt
+2. Tresor anlegen: 6 Zeichen und 4 Emoji abgelehnt, Wiederholung falsch → Meldung, Speichern-Dialog **abgebrochen** → nichts angelegt, Formular nicht hängend; Pfad ohne Endung → `.keypile`, Umlaut-/Leerzeichen-Pfad
+3. Neuer Login per Kürzel (Strg/⌘+N), zwei URLs, Passwort mit Leerzeichen
+4. Suche über die zweite URL
+5. Strg/⌘+C kopiert das Passwort über Rust; Windows: Strg+Alt (AltGr) löst kein Kürzel aus
+6. Ordner „Arbeit/Kunden“: verschachtelt sichtbar, Löschen **abgebrochen** → bleibt, OK → weg
+7. Generator per Kürzel, Passphrase, Kopieren über `copy_secret`
+8. Anhang: Dialog **abgebrochen** → nichts; > 10 MB → übersetzte Meldung
+9. Import per Strg/⌘+,: **abgebrochen** → nichts; kaputtes JSON → übersetzt; CSV → „3 importiert, 1 übersprungen“
+10. Export: Warnung nennt den Umfang, **Abbrechen** öffnet keinen Speichern-Dialog
+11. Master-Passwort: falsches aktuelles → übersetzt, kein Rekey; richtiges → Erfolg
+12. Sperren mitten in der Bearbeitung (Strg/⌘+L) → gesperrt, nichts gespeichert, Entsperren, Änderung nicht vorhanden
+13. Speichern schlägt fehl → übersetzte Meldung, Formular bleibt, zweites Speichern legt den Eintrag genau einmal an
+14. Handbuch: DE und EN haben je 14 Abschnitte mit identischer Absatzzahl; Suche „Formel“/„formula“ findet „Import & Export“
+
+Ergebnis: 4 Konfigurationen × 16 Schritte grün; zusätzlich der Lauf aus §9 (4 × 23 Schritte) grün.
+
+Dateisystem-Fehlerfälle als Rust-Tests gegen echte Dateien:
+
+| Test | Fall |
+|---|---|
+| `state::read_only_folder_fails_cleanly_and_recovers` | Ordner schreibgeschützt: Fehler „Speichern fehlgeschlagen“, Datei unverändert, keine Temp-Datei, Neustart sieht letzte gültige Version, nach Freigabe klappt Speichern |
+| `state::stale_temp_file_from_crash_is_harmless` | Absturz zwischen Schreiben und Umbenennen (Temp-Datei bleibt): Öffnen und nächstes Speichern unbeeinträchtigt |
+| `state::disk_full_keeps_last_good_version` (`#[ignore]`, mit `KEYPILE_FULL_DIR`) | **Datenträger voll** auf einem 2-MB-HFS+-Image (`hdiutil`): Fehler, keine Temp-Datei, letzte Version öffnet, nach Platz schaffen klappt Speichern — ausgeführt, grün |
+| `commands::disk_full_export_leaves_no_partial_file` (`#[ignore]`) | Export auf vollen Datenträger: keine Teildatei — ausgeführt, grün |
+| `commands::user_file_untouched_when_target_not_writable` | Export auf schreibgeschützte Zieldatei: Inhalt bleibt |
+| `commands::failed_save_rolls_back_so_retry_creates_no_duplicate` | Rollback + Wiederholung ohne Duplikat |
+
+### Ausgeführt
+
+| Prüfung | Ergebnis |
+|---|---|
+| `cargo test --workspace` | Core 50/50, App 16/16 (+ 2 Disk-voll-Tests manuell mit Image, grün) |
+| `cargo clippy --workspace --tests` | 0 Warnungen |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` | fehlerfrei |
+| `pnpm test`, `pnpm build` | 6/6, fehlerfrei |
+| Headless-Chromium (Journeys oben + §9-Lauf) | grün |
+
+Keine neuen Abhängigkeiten. Version bleibt 1.0.0.
+
+### Nur auf echter Hardware prüfbar (zusätzlich zu §9/§10)
+
+- „Gesperrte Datei“ unter Windows (OneDrive/Virenscanner hält die Datei länger als 2 s): Meldung
+  „Speichern fehlgeschlagen“, Formular bleibt, erneutes Speichern ohne Duplikat.
+- Datenträger voll / USB-Stick abgezogen während des Speicherns unter Windows (NTFS/exFAT) und macOS (APFS).
+- Export-Bestätigung: der zweizeilige Text im nativen Dialog (TaskDialog/NSAlert) gut lesbar.
+- CSV-Export in Excel/Numbers öffnen: Textzellen mit `'`-Präfix werden als Text angezeigt, keine Formel ausgeführt.
+- Gemischter Betrieb 0.3.x/1.0 auf zwei Geräten (Purge-Tombstone-Verhalten wie dokumentiert).

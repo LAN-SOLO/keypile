@@ -27,6 +27,7 @@ export interface EntrySummary {
   title: string;
   username: string;
   url: string | null;
+  urls: string[];
   category: string;
   favorite: boolean;
   folder: string | null;

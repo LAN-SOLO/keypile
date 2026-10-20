@@ -151,7 +151,7 @@ export default function MainView() {
         (e) =>
           e.title.toLowerCase().includes(q) ||
           e.username.toLowerCase().includes(q) ||
-          (e.url ?? '').toLowerCase().includes(q) ||
+          (e.urls ?? (e.url ? [e.url] : [])).some((u) => u.toLowerCase().includes(q)) ||
           e.tags.some((tag) => tag.toLowerCase().includes(q))
       );
     }
@@ -197,6 +197,13 @@ export default function MainView() {
     if (!name) return;
     try {
       await api.saveFolder(null, name);
+      // "Arbeit/Kunden": open the parent chain so the new folder is visible
+      const segs = name.split('/').filter(Boolean); // same split as buildFolderTree
+      setExpandedFolders((prev) => {
+        const next = new Set(prev);
+        for (let i = 1; i < segs.length; i++) next.add(segs.slice(0, i).join('/'));
+        return next;
+      });
       await reload();
     } catch (err) {
       toast(String(err), true);

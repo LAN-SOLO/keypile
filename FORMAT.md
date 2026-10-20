@@ -158,7 +158,23 @@ Tags, Ordner) werden geleert, `id`, Zeitstempel und Versionsvektor bleiben, und
 der Purge zählt als Änderung (`vv[device_id] += 1`). So dominiert er die
 Kopien anderer Geräte und repliziert. Clients zeigen Purge-Tombstones nirgends
 an. Ältere Clients (vor 1.0) kennen das Feld nicht und zeigen sie als leere
-Einträge im Papierkorb.
+Einträge im Papierkorb. Speichert ein solcher Client, fällt `purged` weg (der
+Eintrag bleibt `deleted: true` und inhaltsleer, 1.0 zeigt ihn dann ebenfalls als
+leeren Papierkorb-Eintrag); leert er den Papierkorb, entfernt er den Tombstone
+ganz, und ein Replikat mit einer älteren Kopie kann den Eintrag zurückbringen.
+Alle Geräte eines Tresors sollten deshalb mindestens 1.0 nutzen.
+
+## 6a. CSV-Export
+
+Spalten `Group, Title, Username, Password, URL, Notes, TOTP` (KeePassXC-kompatibel),
+UTF-8 mit BOM, alle Einträge außer dem Papierkorb (archivierte inklusive), nur
+die erste URL; eigene Felder, weitere URLs, Tags, Anhänge und Verlauf fehlen.
+Formel-Schutz (CSV-Injection): beginnt `Group`, `Title`, `Username`, `URL` oder
+`Notes` mit `=`, `+`, `-`, `@`, Tab oder CR, wird ein `'` vorangestellt.
+`Password` und `TOTP` bleiben byte-genau (ein Präfix würde beim Import in einen
+anderen Passwortmanager falsche Geheimnisse erzeugen). Der keypile-Import
+entfernt genau ein `'`, wenn danach eines dieser Zeichen folgt; Passwörter
+übernimmt er ungetrimmt.
 
 ## 7. Speichern (Implementierungspflichten)
 

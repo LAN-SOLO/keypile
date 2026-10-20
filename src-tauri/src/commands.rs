@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use uuid::Uuid;
@@ -35,6 +35,8 @@ pub struct EntrySummary {
     pub title: String,
     pub username: String,
     pub url: Option<String>,
+    /// all URLs — the search matches every one, not only the first
+    pub urls: Vec<String>,
     pub category: String,
     pub favorite: bool,
     pub folder: Option<Uuid>,
@@ -105,6 +107,34 @@ fn with_session<T>(
     let mut guard = st.session.lock().map_err(|_| "state poisoned")?;
     let session = guard.as_mut().ok_or("Tresor ist gesperrt")?;
     f(session)
+}
+
+/// Like [`with_session`] for commands that change the vault and save it:
+/// if anything fails (typically the save — read-only folder, disk full,
+/// locked file), the in-memory vault goes back to its state before the
+/// command. Memory then matches the last good file on disk, and repeating the
+/// action (save again, import again) cannot create duplicates. External
+/// changes merged during the failed save are merged again on the next one,
+/// because the disk hash only advances after a successful write.
+fn with_session_tx<T>(
+    st: &State<'_, AppState>,
+    f: impl FnOnce(&mut Session) -> Result<T, String>,
+) -> Result<T, String> {
+    with_session(st, |s| session_tx(s, f))
+}
+
+fn session_tx<T>(
+    s: &mut Session,
+    f: impl FnOnce(&mut Session) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut before = s.unlocked.vault.clone();
+    let r = f(s);
+    if r.is_err() {
+        std::mem::swap(&mut s.unlocked.vault, &mut before);
+    }
+    // whichever copy is no longer used still holds secrets
+    state::wipe_vault(&mut before);
+    r
 }
 
 /// Entry lookup for commands: purge tombstones are invisible to the UI.
@@ -210,7 +240,7 @@ fn create_vault_blocking(
     keyfile_path: Option<String>,
 ) -> Result<StatusDto, String> {
     let st = app.state::<AppState>();
-    if password.len() < 8 {
+    if password.chars().count() < 8 {
         password.zeroize();
         return Err("Das Master-Passwort muss mindestens 8 Zeichen haben".into());
     }
@@ -320,6 +350,7 @@ pub fn list_entries(st: State<'_, AppState>) -> Result<Vec<EntrySummary>, String
                 title: e.title.clone(),
                 username: e.username.clone(),
                 url: e.urls.first().cloned(),
+                urls: e.urls.clone(),
                 category: e.category.clone(),
                 favorite: e.favorite,
                 folder: e.folder,
@@ -360,7 +391,7 @@ pub fn save_entry(
     if let Some(t) = input.totp.as_deref().filter(|t| !t.trim().is_empty()) {
         totp::parse(t).map_err(|e| e.to_string())?;
     }
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         let vault = &mut s.unlocked.vault;
         let existing = match input.id {
             Some(id) => match vault.entry_mut(id) {
@@ -451,7 +482,7 @@ fn set_deleted(
     deleted: bool,
 ) -> Result<(), String> {
     let device_id = settings::load(app).device_id;
-    with_session(st, |s| {
+    with_session_tx(st, |s| {
         let e = find_mut(&mut s.unlocked.vault, id)?;
         e.deleted = deleted;
         e.deleted_at = deleted.then(chrono::Utc::now);
@@ -488,7 +519,7 @@ pub fn purge_entry(
     id: Uuid,
 ) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         find_mut(&mut s.unlocked.vault, id)?.purge(&device_id);
         state::persist(s)?;
         Ok(())
@@ -498,7 +529,7 @@ pub fn purge_entry(
 #[tauri::command(async)]
 pub fn empty_trash(app: tauri::AppHandle, st: State<'_, AppState>) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         for e in s.unlocked.vault.entries.iter_mut() {
             if e.deleted && !e.purged {
                 e.purge(&device_id);
@@ -517,7 +548,7 @@ pub fn set_archived(
     archived: bool,
 ) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         let e = find_mut(&mut s.unlocked.vault, id)?;
         e.archived = archived;
         e.touch(&device_id);
@@ -551,7 +582,7 @@ pub fn add_attachment(
         .and_then(|n| n.to_str())
         .unwrap_or("Anhang")
         .to_string();
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         let mut copy = {
             let e = find_mut(&mut s.unlocked.vault, id)?;
             e.attachments.push(Attachment {
@@ -579,7 +610,7 @@ pub fn remove_attachment(
     attachment_id: Uuid,
 ) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         let e = find_mut(&mut s.unlocked.vault, id)?;
         e.attachments.retain(|a| a.id != attachment_id);
         e.touch(&device_id);
@@ -603,10 +634,12 @@ pub fn save_attachment(
             .iter()
             .find(|a| a.id == attachment_id)
             .ok_or("Anhang nicht gefunden")?;
-        let bytes = base64::engine::general_purpose::STANDARD
+        let mut bytes = base64::engine::general_purpose::STANDARD
             .decode(&a.data)
             .map_err(|_| "Anhang ist beschädigt")?;
-        std::fs::write(&dest_path, bytes).map_err(|e| format!("Speichern fehlgeschlagen: {e}"))?;
+        let written = write_user_file(Path::new(&dest_path), &bytes);
+        bytes.zeroize();
+        written.map_err(|e| format!("Speichern fehlgeschlagen: {e}"))?;
         Ok(())
     })
 }
@@ -638,7 +671,7 @@ pub fn save_folder(
     if name.is_empty() {
         return Err("Ordnername darf nicht leer sein".into());
     }
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         let folder = match id.and_then(|id| s.unlocked.vault.folders.iter_mut().find(|f| f.id == id))
         {
             Some(f) => {
@@ -670,7 +703,7 @@ pub fn delete_folder(
     id: Uuid,
 ) -> Result<(), String> {
     let device_id = settings::load(&app).device_id;
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         for e in s.unlocked.vault.entries.iter_mut() {
             if e.folder == Some(id) {
                 e.folder = None;
@@ -957,7 +990,7 @@ pub fn import_file(
     }
     .map_err(|e| e.to_string())?;
 
-    with_session(&st, |s| {
+    with_session_tx(&st, |s| {
         let vault = &mut s.unlocked.vault;
         // reuse folders with identical names instead of duplicating them
         let mut folder_remap: HashMap<Uuid, Uuid> = HashMap::new();
@@ -995,12 +1028,29 @@ pub fn import_file(
     })
 }
 
+/// Write a plaintext file the user asked for (CSV export, attachment).
+/// If the target cannot be opened (locked, read-only), it stays untouched;
+/// if writing fails after we truncated it (disk full), the partial file is
+/// removed — a half-written export must not linger with secrets in it.
+fn write_user_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path)?;
+    let r = f.write_all(bytes).and_then(|_| f.sync_all());
+    drop(f);
+    if r.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    r
+}
+
 #[tauri::command(async)]
 pub fn export_csv_file(st: State<'_, AppState>, path: String) -> Result<usize, String> {
     with_session(&st, |s| {
-        let csv = import::export_csv(&s.unlocked.vault).map_err(|e| e.to_string())?;
+        let mut csv = import::export_csv(&s.unlocked.vault).map_err(|e| e.to_string())?;
         let count = s.unlocked.vault.entries.iter().filter(|e| !e.deleted).count();
-        std::fs::write(&path, csv).map_err(|e| format!("Export fehlgeschlagen: {e}"))?;
+        let written = write_user_file(Path::new(&path), csv.as_bytes());
+        csv.zeroize();
+        written.map_err(|e| format!("Export fehlgeschlagen: {e}"))?;
         Ok(count)
     })
 }
@@ -1044,7 +1094,7 @@ fn change_master_blocking(
         a.zeroize();
         b.zeroize();
     };
-    if new_password.len() < 8 {
+    if new_password.chars().count() < 8 {
         wipe(&mut current_password, &mut new_password);
         return Err("Das neue Master-Passwort muss mindestens 8 Zeichen haben".into());
     }
@@ -1180,4 +1230,83 @@ pub fn copy_entry_field(
         }
     })?;
     copy_with_autoclear(app, text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Journey "export into a read-only file": the existing file stays as it was.
+    #[cfg(unix)]
+    #[test]
+    fn user_file_untouched_when_target_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("kp-userfile-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("export.csv");
+        std::fs::write(&p, b"alt").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o444)).unwrap();
+        if std::fs::OpenOptions::new().write(true).open(&p).is_err() {
+            assert!(write_user_file(&p, b"neu").is_err());
+            assert_eq!(std::fs::read(&p).unwrap(), b"alt");
+        }
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_user_file(&p, b"neu").unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"neu");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Journey "save fails, user fixes the folder and saves again": the failed
+    /// attempt is rolled back in memory, so the retry stores the entry once —
+    /// no duplicate from the first try.
+    #[cfg(unix)]
+    #[test]
+    fn failed_save_rolls_back_so_retry_creates_no_duplicate() {
+        use keypile_core::crypto::KdfParams;
+        use keypile_core::format;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("kp-tx-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.keypile");
+        let kdf = KdfParams { algo: "argon2id".into(), m_kib: 8 * 1024, t: 1, p: 1 };
+        let (bytes, _) = format::create(&Vault::new("t"), "pw", None, kdf).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut s = Session {
+            path: path.clone(),
+            unlocked: format::open(&bytes, "pw", None).unwrap(),
+            disk_hash: state::file_hash(&bytes),
+            conflict_label: state::conflict_label("de"),
+        };
+        let add = |s: &mut Session| {
+            s.unlocked.vault.entries.push(Entry::new("Bank"));
+            state::persist(s).map(|_| ())
+        };
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let writable = std::fs::File::create(dir.join("probe")).is_ok(); // root
+        if !writable {
+            assert!(session_tx(&mut s, add).is_err());
+            assert!(s.unlocked.vault.entries.is_empty(), "failed save must be rolled back");
+        }
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        session_tx(&mut s, add).unwrap();
+        let disk = format::open(&std::fs::read(&path).unwrap(), "pw", None).unwrap();
+        assert_eq!(disk.vault.entries.iter().filter(|e| e.title == "Bank").count(), 1);
+        assert_eq!(s.unlocked.vault.entries.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Journey "disk full during export": no partial plaintext file remains.
+    /// Runs only on request, like `state::tests::disk_full_keeps_last_good_version`.
+    #[test]
+    #[ignore]
+    fn disk_full_export_leaves_no_partial_file() {
+        let Ok(base) = std::env::var("KEYPILE_FULL_DIR") else { return };
+        let dir = PathBuf::from(base).join(format!("kpx-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("export.csv");
+        let big = vec![b'x'; 8 * 1024 * 1024]; // larger than the scratch volume
+        assert!(write_user_file(&p, &big).is_err());
+        assert!(!p.exists(), "partial export left behind");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

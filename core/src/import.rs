@@ -80,14 +80,18 @@ pub fn import_csv(data: &str, device_id: &str) -> Result<ImportResult> {
             if v.is_empty() {
                 continue;
             }
+            // text columns may carry the formula-injection guard of our own
+            // export ("'=…"); passwords are never trimmed or altered — a
+            // leading/trailing space is part of the secret
+            let text = || unescape_formula(v).to_string();
             match *kind {
-                "title" => entry.title = v.to_string(),
-                "username" if entry.username.is_empty() => entry.username = v.to_string(),
-                "password" => entry.password = v.to_string(),
-                "url" => entry.urls.push(v.to_string()),
-                "notes" => entry.notes = v.to_string(),
+                "title" => entry.title = text(),
+                "username" if entry.username.is_empty() => entry.username = text(),
+                "password" => entry.password = field.to_string(),
+                "url" => entry.urls.push(text()),
+                "notes" => entry.notes = text(),
                 "totp" => entry.totp = Some(v.to_string()),
-                "folder" => folder_name = v.to_string(),
+                "folder" => folder_name = text(),
                 "favorite" => entry.favorite = v == "1" || v.eq_ignore_ascii_case("true"),
                 _ => {}
             }
@@ -129,6 +133,31 @@ pub fn import_csv(data: &str, device_id: &str) -> Result<ImportResult> {
         folders,
         skipped,
     })
+}
+
+/// Characters that make spreadsheet programs (Excel, LibreOffice, Numbers,
+/// Google Sheets) treat a cell as a formula — OWASP "CSV injection".
+fn is_formula_trigger(c: char) -> bool {
+    matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r')
+}
+
+/// Export guard: prefix a text cell that would be read as a formula with a
+/// single quote. Applied to Group/Title/Username/URL/Notes only — Password
+/// and TOTP stay byte-exact so a migration never imports altered secrets.
+fn escape_formula(v: &str) -> std::borrow::Cow<'_, str> {
+    match v.chars().next() {
+        Some(c) if is_formula_trigger(c) => format!("'{v}").into(),
+        _ => v.into(),
+    }
+}
+
+/// Import side of [`escape_formula`]: drop exactly one guard quote, but only
+/// when it precedes a trigger character (so plain "'quoted'" text stays).
+fn unescape_formula(v: &str) -> &str {
+    match v.strip_prefix('\'') {
+        Some(rest) if rest.chars().next().is_some_and(is_formula_trigger) => rest,
+        _ => v,
+    }
 }
 
 /// Excel, 1Password and several Windows tools write a UTF-8 BOM; left in
@@ -277,12 +306,12 @@ pub fn export_csv(vault: &Vault) -> Result<String> {
             .map(|f| f.name.clone())
             .unwrap_or_default();
         wtr.write_record([
-            group.as_str(),
-            &e.title,
-            &e.username,
-            &e.password,
-            e.urls.first().map(String::as_str).unwrap_or(""),
-            &e.notes,
+            &*escape_formula(&group),
+            &*escape_formula(&e.title),
+            &*escape_formula(&e.username),
+            e.password.as_str(),
+            &*escape_formula(e.urls.first().map(String::as_str).unwrap_or("")),
+            &*escape_formula(&e.notes),
             e.totp.as_deref().unwrap_or(""),
         ])
         .map_err(|e| CoreError::Import(e.to_string()))?;
@@ -398,6 +427,44 @@ mod tests {
     fn encrypted_bitwarden_rejected() {
         let json = r#"{"encrypted": true, "items": []}"#;
         assert!(import_bitwarden_json(json, "dev").is_err());
+    }
+
+    #[test]
+    fn export_guards_formula_cells_but_keeps_secrets_exact() {
+        let mut vault = Vault::new("t");
+        let mut e = Entry::new("=HYPERLINK(\"http://x\",\"klick\")");
+        e.username = "+49 160 1234".into();
+        e.password = "=1+1 ".into();
+        e.urls.push("@evil".into());
+        e.notes = "-2+3\nzweite Zeile".into();
+        vault.entries.push(e);
+        let mut tab = Entry::new("\tTab");
+        tab.password = " -lead and trail- ".into();
+        tab.notes = "'quoted' bleibt".into();
+        vault.entries.push(tab);
+        let out = export_csv(&vault).unwrap();
+        let mut rdr = csv::Reader::from_reader(out.trim_start_matches('\u{feff}').as_bytes());
+        let rows: Vec<csv::StringRecord> = rdr.records().map(|r| r.unwrap()).collect();
+        // what a spreadsheet sees: text cells are neutralised …
+        assert_eq!(&rows[0][1], "'=HYPERLINK(\"http://x\",\"klick\")");
+        assert_eq!(&rows[0][2], "'+49 160 1234");
+        assert_eq!(&rows[0][4], "'@evil");
+        assert_eq!(&rows[0][5], "'-2+3\nzweite Zeile");
+        assert_eq!(&rows[1][1], "'\tTab");
+        // … secrets are byte-exact
+        assert_eq!(&rows[0][3], "=1+1 ");
+        assert_eq!(&rows[1][3], " -lead and trail- ");
+        // keypile's own import restores the original text and passwords
+        let re = import_csv(&out, "dev").unwrap();
+        assert_eq!(re.entries[0].title, "=HYPERLINK(\"http://x\",\"klick\")");
+        assert_eq!(re.entries[0].username, "+49 160 1234");
+        assert_eq!(re.entries[0].password, "=1+1 ");
+        assert_eq!(re.entries[0].urls, vec!["@evil".to_string()]);
+        assert_eq!(re.entries[0].notes, "-2+3\nzweite Zeile");
+        // the guard quote also protects a leading tab from being trimmed away
+        assert_eq!(re.entries[1].title, "\tTab");
+        assert_eq!(re.entries[1].password, " -lead and trail- ");
+        assert_eq!(re.entries[1].notes, "'quoted' bleibt");
     }
 
     #[test]
