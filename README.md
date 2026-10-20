@@ -3,7 +3,7 @@
 Passwortmanager, der KeePassXC (lokaler, dateibasierter Tresor) und Vaultwarden
 (Sync/Autofill auf allen Geräten) in einem Tool vereint. Free-Tier: kompletter
 lokaler Tresor inklusive Sync über den eigenen Cloud-Speicher (Dropbox, Google
-Drive, iCloud Drive, WebDAV) — kein Konto, kein Server nötig. **unlocked**
+Drive, iCloud Drive, als Laufwerk eingebundenes WebDAV) — kein Konto, kein Server nötig. **unlocked**
 (coming soon): Browser-Plugin mit Autofill, Ende-zu-Ende-verschlüsselter
 Geräte-Sync ohne eigenes Cloud-Laufwerk, sicheres Teilen.
 
@@ -13,8 +13,8 @@ Produktseite: https://lan-solo.com/de/tools/keypile/ · Plan: `KEYPILE_PLAN.md`
 ## Status
 
 **Version 1.0 (Test-Build).** Funktions- und Sicherheits-Audit siehe
-[`AUDIT-1.0.md`](AUDIT-1.0.md). Rust-Core (`core/`) mit vollständiger
-Testabdeckung für Format, Krypto, Merge und TOTP; Tauri-Desktop-App
+[`AUDIT-1.0.md`](AUDIT-1.0.md). Rust-Core (`core/`) mit Tests für Format,
+Krypto, Merge, TOTP und Import/Export; Tauri-Desktop-App
 (`src-tauri/` + `src/`) mit Tresor-UI, Generator, Passwort-Check und
 Import/Export. **Noch kein externer Audit — nicht für echte Passwörter
 verwenden**, siehe Disclaimer auf der Produktseite.

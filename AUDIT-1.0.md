@@ -359,6 +359,8 @@ Code geprüft, End-to-End-Journeys inkl. Fehlerfällen, offene Punkte aus Runde 
 | Mindestlänge „8 Zeichen“ | Rust zählte Bytes (`len()`), UI UTF-16-Einheiten: 4 Emoji galten als 8 Zeichen, „äöü…“ als doppelt | Beide zählen Unicode-Codepoints (`chars().count()` / `[...pw].length`) |
 | Hilfe „Sicherheit“: Auto-Sperre/Zwischenablage-Zeit | „0 = nie“ fehlte | ergänzt |
 | Hilfe „Sync“ | Verhalten älterer Clients (vor 1.0) mit Purge-Tombstones fehlte | ergänzt (siehe Leftover unten) |
+| README: „vollständige Testabdeckung“, Sync über „WebDAV“ | keine Coverage-Messung; WebDAV nur als eingebundenes Laufwerk (keypile spricht kein WebDAV) | Formulierung korrigiert |
+| Hilfe „Tresor“: Verhalten bei Speicherfehlern | fehlte | ergänzt (Rollback, Formular bleibt, siehe unten) |
 
 Geprüft und zutreffend (Code gelesen, teils per Test/UI): Argon2id 64 MiB/t=3/p=4 + AES-256-GCM,
 Schlüsseldatei-Pflicht, Master-Passwortwechsel inkl. `.bak`, 10 Kategorien, 10 Feldtypen + Abschnitt,
@@ -434,6 +436,7 @@ Dateisystem-Fehlerfälle als Rust-Tests gegen echte Dateien:
 | `cargo check --target x86_64-pc-windows-msvc --workspace --tests` | fehlerfrei |
 | `pnpm test`, `pnpm build` | 6/6, fehlerfrei |
 | Headless-Chromium (Journeys oben + §9-Lauf) | grün |
+| `cargo audit` | unverändert gegenüber §10: zip 4.6.1 (RUSTSEC-2026-0367/68/69, nur Updater-Entpacken signierter Pakete; Fix bräuchte ein Major-Update des Updater-Plugins), unmaintained-Hinweise |
 
 Keine neuen Abhängigkeiten. Version bleibt 1.0.0.
 
