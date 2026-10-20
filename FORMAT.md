@@ -170,10 +170,11 @@ Spalten `Group, Title, Username, Password, URL, Notes, TOTP` (KeePassXC-kompatib
 UTF-8 mit BOM, alle Einträge außer dem Papierkorb (archivierte inklusive), nur
 die erste URL; eigene Felder, weitere URLs, Tags, Anhänge und Verlauf fehlen.
 Formel-Schutz (CSV-Injection): beginnt `Group`, `Title`, `Username`, `URL` oder
-`Notes` mit `=`, `+`, `-`, `@`, Tab oder CR, wird ein `'` vorangestellt.
+`Notes` mit `=`, `+`, `-`, `@`, Tab oder CR — auch nach einem oder mehreren
+`'` (z. B. `'+49`) —, wird ein `'` vorangestellt.
 `Password` und `TOTP` bleiben byte-genau (ein Präfix würde beim Import in einen
 anderen Passwortmanager falsche Geheimnisse erzeugen). Der keypile-Import
-entfernt genau ein `'`, wenn danach eines dieser Zeichen folgt; Passwörter
+entfernt genau ein `'`, wenn danach (ggf. nach weiteren `'`) eines dieser Zeichen folgt; Passwörter
 übernimmt er ungetrimmt.
 
 ## 7. Speichern (Implementierungspflichten)

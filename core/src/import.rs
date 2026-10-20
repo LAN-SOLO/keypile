@@ -147,6 +147,9 @@ fn is_formula_trigger(c: char) -> bool {
 fn escape_formula(v: &str) -> std::borrow::Cow<'_, str> {
     match v.chars().next() {
         Some(c) if is_formula_trigger(c) => format!("'{v}").into(),
+        // a text that itself starts with quotes + trigger ("'+49") gets a
+        // guard too, or the import would take its own quote for ours
+        Some('\'') if quotes_then_trigger(v) => format!("'{v}").into(),
         _ => v.into(),
     }
 }
@@ -155,9 +158,16 @@ fn escape_formula(v: &str) -> std::borrow::Cow<'_, str> {
 /// when it precedes a trigger character (so plain "'quoted'" text stays).
 fn unescape_formula(v: &str) -> &str {
     match v.strip_prefix('\'') {
-        Some(rest) if rest.chars().next().is_some_and(is_formula_trigger) => rest,
+        Some(rest) if quotes_then_trigger(v) => rest,
         _ => v,
     }
+}
+
+/// `'…'` followed by a trigger character: one or more leading quotes, then
+/// `=` `+` `-` `@` Tab or CR.
+fn quotes_then_trigger(v: &str) -> bool {
+    let rest = v.trim_start_matches('\'');
+    rest.len() < v.len() && rest.chars().next().is_some_and(is_formula_trigger)
 }
 
 /// Excel, 1Password and several Windows tools write a UTF-8 BOM; left in
@@ -465,6 +475,34 @@ mod tests {
         assert_eq!(re.entries[1].title, "\tTab");
         assert_eq!(re.entries[1].password, " -lead and trail- ");
         assert_eq!(re.entries[1].notes, "'quoted' bleibt");
+    }
+
+    /// Texts that genuinely start with a quote before a trigger ("'+49 …",
+    /// "'-- Kommentar") survived export + re-import byte-exact before the
+    /// formula guard existed — the guard must not eat that quote.
+    #[test]
+    fn leading_quote_before_trigger_survives_roundtrip() {
+        let mut vault = Vault::new("t");
+        let mut e = Entry::new("'=Titel");
+        e.username = "'+49 160".into();
+        e.urls.push("'@host".into());
+        e.notes = "'-- Kommentar".into();
+        e.password = "pw".into();
+        let mut deep = Entry::new("''=zwei");
+        deep.password = "pw".into();
+        deep.notes = "'nur Zitat'".into();
+        vault.entries.push(e);
+        vault.entries.push(deep);
+        let out = export_csv(&vault).unwrap();
+        let re = import_csv(&out, "dev").unwrap();
+        assert_eq!(re.entries[0].title, "'=Titel");
+        assert_eq!(re.entries[0].username, "'+49 160");
+        assert_eq!(re.entries[0].urls, vec!["'@host".to_string()]);
+        assert_eq!(re.entries[0].notes, "'-- Kommentar");
+        assert_eq!(re.entries[1].title, "''=zwei");
+        assert_eq!(re.entries[1].notes, "'nur Zitat'");
+        // a spreadsheet still sees a guarded text cell
+        assert!(out.contains("''=Titel"));
     }
 
     #[test]
